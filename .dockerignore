@@ -1,0 +1,13 @@
+.venv/
+__pycache__/
+*.py[cod]
+.git/
+.gitignore
+.env
+*.md
+!myskin/**
+convos/
+.myskin/
+data/crawl/
+.pytest_cache/
+.mypy_cache/

@@ -1,0 +1,6 @@
+# Optional local overrides (copy to config.local.yaml — gitignored)
+# api:
+#   port: 8081
+# crawler:
+#   max_pages: 50
+#   max_depth: 2

@@ -1,0 +1,6 @@
+# Docker overlay — merged when MYSKIN_CONFIG_FILES=config.yaml,config.docker.yaml
+api:
+  data_dir: /app/data
+
+crawler:
+  state_db: /app/.myskin/crawl.db

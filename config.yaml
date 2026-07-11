@@ -1,0 +1,33 @@
+# myskin configuration (safe to commit — no secrets)
+# Copy config.local.yaml.example → config.local.yaml for machine-specific overrides.
+# Secrets (API token) live in .env only: MYSKIN_API_TOKEN=...
+
+api:
+  data_dir: ./data
+  host: 0.0.0.0
+  port: 8080
+
+crawler:
+  seed_url: https://edu.gov.cz/
+  max_depth: 3
+  max_pages: 100000
+  request_delay: 1.5
+  user_agent: MyskinCrawler/1.0 (+https://github.com/KodzghlyCZ/myskin)
+  respect_robots: true
+  state_db: ./.myskin/crawl.db
+  refresh_known: true
+  resume_on_startup: true
+  # Sitemap-driven discovery (skips unchanged URLs via <lastmod>):
+  sitemap_url: https://edu.gov.cz/sitemap_index.xml
+  sitemap_only: true
+  # Terminal progress: auto | tty | log | off
+  progress: auto
+
+scheduler:
+  enabled: true
+  cron: "0 2 * * 0"
+  # Use interval instead of cron (set one, leave the other null):
+  interval_hours: null
+  interval_minutes: null
+  run_on_startup: false
+  timezone: UTC

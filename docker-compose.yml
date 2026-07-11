@@ -1,0 +1,25 @@
+services:
+  myskin:
+    build: .
+    image: myskin:latest
+    container_name: myskin
+    ports:
+      - "8080:8080"
+    env_file:
+      - .env
+    environment:
+      MYSKIN_CONFIG_FILES: config.yaml,config.docker.yaml
+    volumes:
+      - myskin-data:/app/data
+      - myskin-state:/app/.myskin
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8080/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+volumes:
+  myskin-data:
+  myskin-state:
