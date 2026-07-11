@@ -99,6 +99,19 @@ Point the REST API connector at `https://<public-host>/api/documents` with `item
 
 Full connector JSON and setup: [docs/RUNBOOK.md](docs/RUNBOOK.md) and `.env.example`.
 
+## GitLab CI/CD
+
+GitHub `main` is mirrored to GitLab via [`.github/workflows/sync-to-gitlab.yml`](.github/workflows/sync-to-gitlab.yml) (same pattern as [mcp-hooker](https://github.com/KodzghlyCZ/mcp-hooker)).
+
+`.gitlab-ci.yml` builds the Docker image on a tagged runner and pushes to the GitLab Container Registry:
+
+- `registry.gitlab.catania-service.cz/catania_dev/myskin:$CI_COMMIT_SHORT_SHA`
+- `registry.gitlab.catania-service.cz/catania_dev/myskin:latest` (default branch only)
+
+Register a GitLab runner with tag `myskin` (or change the tag in `.gitlab-ci.yml` to match your fleet).
+
+**GitHub repo secrets** (for the sync workflow): `GITLAB_URL`, `USERNAME`, `GITLAB_PAT`.
+
 ## License
 
 TBD.

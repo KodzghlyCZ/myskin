@@ -909,12 +909,27 @@ Chroma `HttpClient` can serve multiple collections from a remote machine. Useful
 
 ### Deploy myskin
 
+**Local / dev build:**
+
 1. Clone repo, `cp .env.example .env`, set `MYSKIN_API_TOKEN`
 2. Tune `config.yaml` (crawler sitemap, scheduler, delays)
 3. `docker compose up -d --build`
 4. Run behind reverse proxy with TLS (Caddy, nginx, Traefik)
 5. Expose **public** URL for RAGFlow (not localhost)
 6. Open `https://<host>/crawl` to monitor crawls
+
+**Production image (GitLab CI):**
+
+| Item | Value |
+|------|-------|
+| Registry image | `registry.gitlab.catania-service.cz/catania_dev/myskin:latest` |
+| GitHub → GitLab | Push to `main` triggers `.github/workflows/sync-to-gitlab.yml` |
+| Build | GitLab CI on runner tag `myskin` (see `.gitlab-ci.yml`) |
+
+```bash
+docker pull registry.gitlab.catania-service.cz/catania_dev/myskin:latest
+docker compose up -d --force-recreate   # after updating image in compose
+```
 
 ### Docker data locations
 
