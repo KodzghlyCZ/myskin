@@ -10,7 +10,14 @@ from myskin.crawl_runner import CrawlAlreadyRunningError, crawl_runner
 from myskin.crawler.config import crawl_settings
 from myskin.crawler.live import crawl_live
 from myskin.crawler.state import CrawlState
-from myskin.dashboard import brand_logo_path, load_dashboard_html, resolve_crawl_static_file
+from myskin.dashboard import (
+    apple_touch_icon_path,
+    brand_logo_path,
+    favicon_path,
+    load_dashboard_html,
+    resolve_brand_static_file,
+    resolve_crawl_static_file,
+)
 from myskin.formats import guess_mime_type
 from myskin.models import (
     CrawlLiveEventModel,
@@ -76,6 +83,15 @@ def _build_live_state() -> CrawlLiveStateModel:
             )
             for e in data["events"]
         ],
+        queue_tail=[
+            CrawlLiveQueueItemModel(
+                url=item.url,
+                label=item.label,
+                kind=item.kind,
+                depth=item.depth,
+            )
+            for item in data["queue_tail"]
+        ],
     )
 
 
@@ -84,13 +100,18 @@ _CRAWL_STATIC_MEDIA = {
     ".js": "application/javascript; charset=utf-8",
 }
 
+_BRAND_STATIC_MEDIA = {
+    ".png": "image/png",
+    ".ico": "image/x-icon",
+}
+
 
 @router.get("/favicon.ico", include_in_schema=False)
 async def favicon() -> FileResponse:
-    logo = brand_logo_path()
-    if not logo.is_file():
+    icon = favicon_path()
+    if not icon.is_file():
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
-    return FileResponse(logo, media_type="image/png")
+    return FileResponse(icon, media_type="image/x-icon")
 
 
 @router.get("/static/brand/myskin-logo.png", include_in_schema=False)
@@ -99,6 +120,23 @@ async def brand_logo() -> FileResponse:
     if not logo.is_file():
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
     return FileResponse(logo, media_type="image/png")
+
+
+@router.get("/static/brand/apple-touch-icon.png", include_in_schema=False)
+async def apple_touch_icon() -> FileResponse:
+    icon = apple_touch_icon_path()
+    if not icon.is_file():
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
+    return FileResponse(icon, media_type="image/png")
+
+
+@router.get("/static/brand/{asset_name}", include_in_schema=False)
+async def brand_static(asset_name: str) -> FileResponse:
+    path = resolve_brand_static_file(asset_name)
+    if path is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
+    media_type = _BRAND_STATIC_MEDIA.get(path.suffix.lower(), "application/octet-stream")
+    return FileResponse(path, media_type=media_type)
 
 
 @router.get("/crawl", response_class=HTMLResponse, tags=["crawl"])

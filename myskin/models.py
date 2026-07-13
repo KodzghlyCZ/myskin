@@ -91,6 +91,13 @@ class CrawlLiveEventModel(BaseModel):
     url: str
 
 
+class CrawlLiveQueueItemModel(BaseModel):
+    url: str
+    label: str
+    kind: str
+    depth: int
+
+
 class CrawlLiveStateModel(BaseModel):
     active: bool
     run_id: int | None = None
@@ -103,6 +110,7 @@ class CrawlLiveStateModel(BaseModel):
     stats: CrawlStatsModel = Field(default_factory=CrawlStatsModel)
     samples: list[CrawlLiveSampleModel] = Field(default_factory=list)
     events: list[CrawlLiveEventModel] = Field(default_factory=list)
+    queue_tail: list[CrawlLiveQueueItemModel] = Field(default_factory=list)
 
 
 class CrawlLiveResponse(BaseModel):

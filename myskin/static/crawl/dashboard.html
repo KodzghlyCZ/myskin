@@ -4,8 +4,11 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>myskin crawl dashboard</title>
-  <link rel="icon" href="/favicon.ico" type="image/png">
-  <link rel="apple-touch-icon" href="/static/brand/myskin-logo.png">
+  <link rel="icon" href="/favicon.ico" sizes="any">
+  <link rel="icon" href="/static/brand/favicon-32x32.png" type="image/png" sizes="32x32">
+  <link rel="icon" href="/static/brand/favicon-16x16.png" type="image/png" sizes="16x16">
+  <link rel="apple-touch-icon" href="/static/brand/apple-touch-icon.png">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@vscode/codicons@0.0.36/dist/codicon.css">
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
   <link rel="stylesheet" href="/crawl/static/dashboard.css">
 </head>
@@ -33,6 +36,8 @@
     </div>
     <h2 class="events-heading">Recent pages</h2>
     <div class="events" id="events"></div>
+    <h2 class="events-heading">Queue tail</h2>
+    <div class="events queue-tail" id="queueTail"></div>
   </main>
   <script src="/crawl/static/dashboard.js"></script>
 </body>

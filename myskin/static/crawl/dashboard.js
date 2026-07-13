@@ -5,6 +5,7 @@ const statePill = document.getElementById("statePill");
 const runMeta = document.getElementById("runMeta");
 const compactBar = document.getElementById("compactBar");
 const eventsEl = document.getElementById("events");
+const queueTailEl = document.getElementById("queueTail");
 
 let lastHealth = null;
 let lastLiveData = null;
@@ -207,13 +208,62 @@ function escapeHtml(text) {
     .replace(/"/g, "&quot;");
 }
 
-function eventLabel(event) {
-  const label = escapeHtml(event.label || event.url);
-  const url = event.url || "";
-  if (!url.startsWith("http://") && !url.startsWith("https://")) {
-    return label;
+const FILE_ICON_BY_EXT = {
+  md: "markdown",
+  pdf: "file-pdf",
+  doc: "file-text",
+  docx: "file-text",
+  xls: "table",
+  xlsx: "table",
+  ppt: "file-media",
+  pptx: "file-media",
+  csv: "table",
+  json: "json",
+  html: "code",
+  htm: "code",
+  css: "symbol-color",
+  txt: "file-text",
+  zip: "file-zip",
+  png: "file-media",
+  jpg: "file-media",
+  jpeg: "file-media",
+  gif: "file-media",
+  svg: "file-media",
+};
+
+const FILE_ICON_BY_KIND = {
+  page: "globe",
+  pdf: "file-pdf",
+  file: "file",
+};
+
+function fileExtension(label, url) {
+  const source = (label || url || "").split("?")[0].split("#")[0];
+  const match = source.match(/\.([a-z0-9]+)$/i);
+  return match ? match[1].toLowerCase() : "";
+}
+
+function fileIconClass(label, kind, url = "") {
+  const ext = fileExtension(label, url);
+  return FILE_ICON_BY_EXT[ext] || FILE_ICON_BY_KIND[kind] || "file";
+}
+
+function fileIcon(label, kind, url = "") {
+  const iconClass = fileIconClass(label, kind, url);
+  return `<span class="codicon codicon-${iconClass} file-icon" aria-hidden="true"></span>`;
+}
+
+function itemLabel(label, url) {
+  const text = escapeHtml(label || url);
+  const href = url || "";
+  if (!href.startsWith("http://") && !href.startsWith("https://")) {
+    return text;
   }
-  return `<a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">${label}</a>`;
+  return `<a href="${escapeHtml(href)}" target="_blank" rel="noopener noreferrer">${text}</a>`;
+}
+
+function eventLabel(event) {
+  return itemLabel(event.label || event.url, event.url);
 }
 
 function authHeaders() {
@@ -326,9 +376,16 @@ function render(data) {
   eventsEl.innerHTML = live.events.length
     ? live.events.slice().reverse().map((e) => {
         const cls = `outcome-${e.outcome}`;
-        return `<div class="event"><span class="${cls}">[${e.kind}] ${e.outcome}</span> ${eventLabel(e)}</div>`;
+        return `<div class="event">${fileIcon(e.label, e.kind, e.url)}<span class="${cls}">[${e.kind}] ${e.outcome}</span> ${eventLabel(e)}</div>`;
       }).join("")
     : '<div class="event" style="color:#8b9cb3">Waiting for crawl events…</div>';
+
+  const tail = live.queue_tail || [];
+  queueTailEl.innerHTML = tail.length
+    ? tail.slice().reverse().map((item) =>
+        `<div class="event">${fileIcon(item.label, item.kind, item.url)}<span class="queue-meta">[${item.kind}] d${item.depth}</span> ${itemLabel(item.label, item.url)}</div>`
+      ).join("")
+    : '<div class="event" style="color:#8b9cb3">Queue empty or waiting for crawl…</div>';
 }
 
 async function refreshHealth() {

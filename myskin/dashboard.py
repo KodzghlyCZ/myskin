@@ -5,10 +5,33 @@ from pathlib import Path
 _CRAWL_STATIC_DIR = Path(__file__).resolve().parent / "static" / "crawl"
 _BRAND_DIR = Path(__file__).resolve().parent / "static" / "brand"
 _LOGO_PATH = _BRAND_DIR / "myskin-logo.png"
+_FAVICON_PATH = _BRAND_DIR / "favicon.ico"
+_APPLE_TOUCH_ICON_PATH = _BRAND_DIR / "apple-touch-icon.png"
 
 
 def brand_logo_path() -> Path:
     return _LOGO_PATH
+
+
+def favicon_path() -> Path:
+    return _FAVICON_PATH
+
+
+def apple_touch_icon_path() -> Path:
+    return _APPLE_TOUCH_ICON_PATH
+
+
+def resolve_brand_static_file(name: str) -> Path | None:
+    """Return a file under static/brand/ if it exists and stays within that directory."""
+    if not name or "/" in name or "\\" in name or name.startswith("."):
+        return None
+    root = _BRAND_DIR.resolve()
+    path = (root / name).resolve()
+    try:
+        path.relative_to(root)
+    except ValueError:
+        return None
+    return path if path.is_file() else None
 
 
 def crawl_static_dir() -> Path:

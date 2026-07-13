@@ -79,3 +79,16 @@ def guess_mime_type(path: Path) -> str:
 
 def format_label(ext: str) -> str:
     return normalize_extension(ext).lstrip(".") or "unknown"
+
+
+def infer_resource_kind(url: str) -> str:
+    ext = extension_from_url(url)
+    if ext == ".pdf":
+        return "pdf"
+    if ext in TEXT_CATALOG_SUFFIXES:
+        return "page"
+    if ext in BINARY_CATALOG_SUFFIXES:
+        return "file"
+    if ext:
+        return "file"
+    return "page"

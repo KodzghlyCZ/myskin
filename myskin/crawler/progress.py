@@ -9,7 +9,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
 from myskin.crawler.config import crawl_settings
-from myskin.crawler.live import crawl_live
+from myskin.crawler.live import LiveQueueItem, crawl_live
 from myskin.crawler.state import CrawlStats
 
 
@@ -127,8 +127,13 @@ class CrawlProgressDisplay:
             sys.stderr.flush()
         self._render(force=True)
 
-    def set_queue_pending(self, pending: int) -> None:
-        crawl_live.set_queue_pending(pending)
+    def set_queue_pending(
+        self,
+        pending: int,
+        *,
+        tail: list[LiveQueueItem] | None = None,
+    ) -> None:
+        crawl_live.set_queue_pending(pending, tail=tail)
         if not self._active:
             return
         self._queue_pending = pending

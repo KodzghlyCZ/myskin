@@ -25,6 +25,14 @@ class LiveEvent:
     url: str
 
 
+@dataclass(frozen=True)
+class LiveQueueItem:
+    url: str
+    label: str
+    kind: str
+    depth: int
+
+
 @dataclass
 class CrawlLiveMonitor:
     _lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
@@ -39,6 +47,7 @@ class CrawlLiveMonitor:
     stats: CrawlStats = field(default_factory=CrawlStats)
     samples: deque[LiveSample] = field(default_factory=lambda: deque(maxlen=5000))
     events: deque[LiveEvent] = field(default_factory=lambda: deque(maxlen=150))
+    queue_tail: list[LiveQueueItem] = field(default_factory=list)
 
     def start(
         self,
@@ -62,13 +71,21 @@ class CrawlLiveMonitor:
             self.stats = initial_stats if initial_stats is not None else CrawlStats()
             self.samples.clear()
             self.events.clear()
+            self.queue_tail.clear()
             self._append_sample_locked()
 
-    def set_queue_pending(self, pending: int) -> None:
+    def set_queue_pending(
+        self,
+        pending: int,
+        *,
+        tail: list[LiveQueueItem] | None = None,
+    ) -> None:
         with self._lock:
             if not self.active:
                 return
             self.queue_pending = pending
+            if tail is not None:
+                self.queue_tail = tail
             self._append_sample_locked()
 
     def record(
@@ -101,6 +118,7 @@ class CrawlLiveMonitor:
                 return
             self.stats = stats
             self.queue_pending = 0
+            self.queue_tail.clear()
             self.finished_at = datetime.now(timezone.utc)
             self._append_sample_locked()
             self.active = False
@@ -149,6 +167,7 @@ class CrawlLiveMonitor:
                 "stats": self.stats,
                 "samples": list(self.samples),
                 "events": list(self.events),
+                "queue_tail": list(self.queue_tail),
             }
 
 

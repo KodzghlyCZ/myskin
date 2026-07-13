@@ -14,6 +14,7 @@ from myskin.crawler.extract import (
     pdf_title_from_url,
 )
 from myskin.crawler.fetch import Fetcher, FetchResult, RobotsCache
+from myskin.crawler.live import LiveQueueItem
 from myskin.crawler.state import CrawlState, CrawlStats, ResourceRecord
 from myskin.crawler.urls import (
     ParsedUrl,
@@ -27,9 +28,39 @@ from myskin.crawler.urls import (
 from myskin.crawler.progress import CrawlProgressDisplay
 from myskin.crawler.sitemap import SitemapEntry, load_sitemap_entries
 from myskin.crawler.writer import parse_http_date, remove_file, write_binary, write_markdown
-from myskin.formats import extension_from_content_type, extension_from_url, format_label, normalize_extension
+from myskin.formats import (
+    extension_from_content_type,
+    extension_from_url,
+    format_label,
+    infer_resource_kind,
+    normalize_extension,
+)
 
 logger = logging.getLogger(__name__)
+
+_QUEUE_TAIL_LIMIT = 40
+
+
+def _queue_tail_items(queue: deque[QueuedUrl], *, limit: int = _QUEUE_TAIL_LIMIT) -> list[LiveQueueItem]:
+    from urllib.parse import urlparse
+
+    items: list[LiveQueueItem] = []
+    for queued in list(queue)[-limit:]:
+        parsed = normalize_url(queued.url)
+        if not parsed:
+            continue
+        kind = infer_resource_kind(parsed.normalized)
+        path = urlparse(parsed.normalized).path or parsed.normalized
+        label = path.lstrip("/") or parsed.normalized
+        items.append(
+            LiveQueueItem(
+                url=parsed.normalized,
+                label=label,
+                kind=kind,
+                depth=queued.depth,
+            )
+        )
+    return items
 
 
 @dataclass
@@ -93,6 +124,7 @@ class CrawlEngine:
                         trigger=trigger,
                         initial_stats=stats,
                     )
+                    self.progress.set_queue_pending(len(queue), tail=_queue_tail_items(queue))
 
                 while queue and stats.pages_fetched + stats.pdfs_fetched < self.settings.max_pages:
                     item = queue.popleft()
@@ -123,7 +155,10 @@ class CrawlEngine:
                             stats.discovered += discovered
 
                     if self.progress:
-                        self.progress.set_queue_pending(len(queue))
+                        self.progress.set_queue_pending(
+                            len(queue),
+                            tail=_queue_tail_items(queue),
+                        )
 
             if self.progress:
                 self.progress.finish(stats)
