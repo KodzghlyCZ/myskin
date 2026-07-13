@@ -21,6 +21,7 @@ from myskin.dashboard import (
 from myskin.formats import guess_mime_type
 from myskin.models import (
     CrawlLiveEventModel,
+    CrawlLiveQueueItemModel,
     CrawlLiveResponse,
     CrawlLiveSampleModel,
     CrawlLiveStateModel,
