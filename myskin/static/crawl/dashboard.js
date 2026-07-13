@@ -8,6 +8,7 @@ const eventsEl = document.getElementById("events");
 
 let lastHealth = null;
 let lastLiveData = null;
+let chartBfsMode = false;
 
 tokenInput.value = localStorage.getItem(TOKEN_KEY) || "";
 document.getElementById("saveToken").onclick = () => {
@@ -16,39 +17,47 @@ document.getElementById("saveToken").onclick = () => {
 };
 
 const ctx = document.getElementById("chart");
+
+function buildChartDatasets(bfsMode) {
+  const datasets = [
+    {
+      label: "Queue",
+      data: [],
+      borderColor: "#e8b84a",
+      backgroundColor: "rgba(232,184,74,0.12)",
+      tension: 0.1,
+      fill: true,
+      pointRadius: 0,
+    },
+  ];
+  if (bfsMode) {
+    datasets.push({
+      label: "Discovered",
+      data: [],
+      borderColor: "#6bcf7f",
+      backgroundColor: "rgba(107,207,127,0.08)",
+      tension: 0.1,
+      fill: false,
+      pointRadius: 0,
+    });
+  }
+  datasets.push({
+    label: "Processed",
+    data: [],
+    borderColor: "#5b9fd4",
+    backgroundColor: "rgba(91,159,212,0.08)",
+    tension: 0.1,
+    fill: false,
+    pointRadius: 0,
+  });
+  return datasets;
+}
+
 const chart = new Chart(ctx, {
   type: "line",
   data: {
     labels: [],
-    datasets: [
-      {
-        label: "Queue",
-        data: [],
-        borderColor: "#e8b84a",
-        backgroundColor: "rgba(232,184,74,0.12)",
-        tension: 0.1,
-        fill: true,
-        pointRadius: 0,
-      },
-      {
-        label: "In sitemap",
-        data: [],
-        borderColor: "#6bcf7f",
-        backgroundColor: "rgba(107,207,127,0.08)",
-        tension: 0.1,
-        fill: false,
-        pointRadius: 0,
-      },
-      {
-        label: "Processed",
-        data: [],
-        borderColor: "#5b9fd4",
-        backgroundColor: "rgba(91,159,212,0.08)",
-        tension: 0.1,
-        fill: false,
-        pointRadius: 0,
-      },
-    ],
+    datasets: buildChartDatasets(false),
   },
   options: {
     responsive: true,
@@ -81,6 +90,32 @@ const chart = new Chart(ctx, {
 let chartRunId = null;
 let chartSampleLen = 0;
 
+function isBfsMode(health, stats) {
+  if (health?.sitemap_only === false) return true;
+  if (health?.sitemap_only === true) return false;
+  return !(stats?.sitemap_urls > 0);
+}
+
+function chartQueueIndex() {
+  return 0;
+}
+
+function chartDiscoveredIndex() {
+  return chartBfsMode ? 1 : -1;
+}
+
+function chartProcessedIndex() {
+  return chartBfsMode ? 2 : 1;
+}
+
+function configureChartMode(bfsMode) {
+  if (bfsMode === chartBfsMode) return;
+  chartBfsMode = bfsMode;
+  chart.data.datasets = buildChartDatasets(bfsMode);
+  chartRunId = null;
+  chartSampleLen = 0;
+}
+
 function resetChart() {
   chart.data.labels = [];
   chart.data.datasets.forEach((ds) => { ds.data = []; });
@@ -93,23 +128,28 @@ function sampleLabel(sample) {
 
 function pushSample(sample) {
   chart.data.labels.push(sampleLabel(sample));
-  chart.data.datasets[0].data.push(sample.queue);
-  chart.data.datasets[1].data.push(sample.discovered);
-  chart.data.datasets[2].data.push(sample.processed);
+  chart.data.datasets[chartQueueIndex()].data.push(sample.queue);
+  if (chartBfsMode) {
+    chart.data.datasets[chartDiscoveredIndex()].data.push(sample.discovered);
+  }
+  chart.data.datasets[chartProcessedIndex()].data.push(sample.processed);
   chart.update("none");
 }
 
 function loadSamples(samples) {
   chart.data.labels = samples.map(sampleLabel);
-  chart.data.datasets[0].data = samples.map((s) => s.queue);
-  chart.data.datasets[1].data = samples.map((s) => s.discovered);
-  chart.data.datasets[2].data = samples.map((s) => s.processed);
+  chart.data.datasets[chartQueueIndex()].data = samples.map((s) => s.queue);
+  if (chartBfsMode) {
+    chart.data.datasets[chartDiscoveredIndex()].data = samples.map((s) => s.discovered);
+  }
+  chart.data.datasets[chartProcessedIndex()].data = samples.map((s) => s.processed);
   chartSampleLen = samples.length;
   chart.update("none");
 }
 
-function syncChart(live) {
+function syncChart(live, bfsMode) {
   const samples = live.samples || [];
+  configureChartMode(bfsMode);
 
   if (!live.run_id) {
     if (chartSampleLen > 0) {
@@ -145,6 +185,18 @@ function sep() {
 function badge(text, tone = "") {
   const toneClass = tone ? ` ${tone}` : "";
   return `<span class="badge${toneClass}">${text}</span>`;
+}
+
+function section(title, body) {
+  return `<div class="stat-section"><div class="section-title">${title}</div><div class="section-body">${body}</div></div>`;
+}
+
+function formatBreakdown(formats) {
+  const keys = Object.keys(formats).sort();
+  if (!keys.length) return metric("formats", "none");
+  return keys.map((fmt) =>
+    metric(fmt.toUpperCase(), formats[fmt], fmt === "md" ? "accent" : "")
+  ).join(sep());
 }
 
 function escapeHtml(text) {
@@ -187,69 +239,71 @@ function renderCompactBar() {
   const data = lastLiveData;
   const live = data?.live;
   const stats = live?.stats || {};
-  const rows = [];
+  const sections = [];
+  const bfsMode = isBfsMode(health, stats);
 
   if (health) {
     const formats = health.catalog_by_format || {};
-    const fmtParts = Object.keys(formats).sort().map((fmt) =>
-      metric(fmt.toUpperCase(), formats[fmt], fmt === "md" ? "accent" : "")
-    );
+    const mdCount = formats.md || 0;
+    const binaryCount = health.catalog_passthrough_count || 0;
 
-    const catalogParts = [
-      metric("Docs", health.document_count, "accent"),
-      metric("PT catalog", health.catalog_passthrough_count || 0),
-      metric("URLs", health.catalog_with_file_url || 0, health.catalog_with_file_url ? "ok" : "warn"),
-      ...fmtParts,
-    ];
+    sections.push(section("Catalog", [
+      metric("documents", health.document_count, "accent"),
+      metric("pages", mdCount),
+      metric("binary files", binaryCount),
+      metric("download URLs", health.catalog_with_file_url || 0, health.catalog_with_file_url ? "ok" : "warn"),
+    ].join(sep())));
 
-    rows.push(`<div class="compact-row">${catalogParts.join(sep())}</div>`);
-    rows.push(`<div class="compact-row badges">${[
-      badge(health.passthrough_enabled ? "passthrough" : "no passthrough", health.passthrough_enabled ? "ok" : ""),
-      badge(health.follow_file_links === false ? "file links off" : "file links", health.follow_file_links === false ? "" : "ok"),
-      health.sitemap_only ? badge("sitemap", "accent") : badge("link crawl"),
+    sections.push(section("Formats on disk", formatBreakdown(formats)));
+
+    sections.push(`<div class="stat-section badges-only"><div class="section-body">${[
+      health.sitemap_only ? badge("sitemap crawl", "accent") : badge("link crawl (BFS)"),
+      badge(health.passthrough_enabled ? "passthrough on" : "passthrough off", health.passthrough_enabled ? "ok" : ""),
+      badge(health.follow_file_links === false ? "file links off" : "file links on", health.follow_file_links === false ? "" : "ok"),
       health.public_base_url ? badge("public URL", "ok") : badge("no public URL", "warn"),
-    ].join("")}</div>`);
+    ].join("")}</div></div>`);
   }
 
   if (live?.run_id) {
     const processed = (stats.pages_fetched || 0) + (stats.pdfs_fetched || 0);
     const pct = live.max_pages ? Math.min(100, Math.round((processed / live.max_pages) * 100)) : 0;
-    const usesSitemap = (stats.sitemap_urls || 0) > 0;
 
-    const runParts = [
-      metric("Processed", `${processed} (${pct}%)`, "accent"),
-      metric("Queue", live.queue_pending, live.queue_pending ? "warn" : ""),
-    ];
+    sections.push(section("This run", [
+      metric("processed", `${processed} / ${live.max_pages} (${pct}%)`, "accent"),
+      metric("queue", live.queue_pending, live.queue_pending ? "warn" : ""),
+    ].join(sep())));
 
-    if (usesSitemap) {
-      runParts.push(metric("Sitemap", stats.sitemap_urls));
-      runParts.push(metric("Queued", stats.sitemap_queued, stats.sitemap_queued ? "warn" : ""));
-      runParts.push(metric("Skipped", stats.sitemap_skipped));
-    } else {
-      runParts.push(metric("Links", stats.discovered, "accent"));
+    if (bfsMode) {
+      sections.push(section("Link discovery", [
+        metric("links found", stats.discovered, "accent"),
+      ].join(sep())));
+    } else if ((stats.sitemap_urls || 0) > 0) {
+      sections.push(section("Sitemap", [
+        metric("in XML", stats.sitemap_urls),
+        metric("queued", stats.sitemap_queued, stats.sitemap_queued ? "warn" : ""),
+        metric("skipped (unchanged)", stats.sitemap_skipped),
+      ].join(sep())));
     }
 
-    rows.push(`<div class="compact-row">${runParts.join(sep())}</div>`);
-    rows.push(`<div class="compact-row">${[
-      '<span class="row-label">Pages</span>',
-      metric("upd", stats.pages_updated, "ok"),
-      metric("same", stats.pages_unchanged),
-      metric("fail", stats.pages_failed, stats.pages_failed ? "bad" : ""),
-      metric("fetch", stats.pages_fetched),
-    ].join(sep())}</div>`);
-    rows.push(`<div class="compact-row">${[
-      '<span class="row-label">Files</span>',
-      metric("found", stats.files_discovered || 0, "accent"),
-      metric("upd", stats.pdfs_updated, "ok"),
-      metric("same", stats.pdfs_unchanged),
-      metric("fail", stats.pdfs_failed, stats.pdfs_failed ? "bad" : ""),
-      metric("fetch", stats.pdfs_fetched),
-    ].join(sep())}</div>`);
+    sections.push(section("HTML pages", [
+      metric("updated", stats.pages_updated, "ok"),
+      metric("unchanged", stats.pages_unchanged),
+      metric("failed", stats.pages_failed, stats.pages_failed ? "bad" : ""),
+      metric("fetched", stats.pages_fetched),
+    ].join(sep())));
+
+    sections.push(section("Passthrough files", [
+      metric("links queued", stats.files_discovered || 0, "accent"),
+      metric("updated", stats.pdfs_updated, "ok"),
+      metric("unchanged", stats.pdfs_unchanged),
+      metric("failed", stats.pdfs_failed, stats.pdfs_failed ? "bad" : ""),
+      metric("fetched", stats.pdfs_fetched),
+    ].join(sep())));
   } else if (!health) {
-    rows.push('<div class="compact-row" style="color:var(--muted)">Waiting for data…</div>');
+    sections.push('<div class="stat-section"><div class="section-body muted">Waiting for data…</div></div>');
   }
 
-  compactBar.innerHTML = rows.join("");
+  compactBar.innerHTML = sections.join("");
 }
 
 function render(data) {
@@ -260,16 +314,14 @@ function render(data) {
 
   const live = data.live;
   const stats = live.stats || {};
-  const usesSitemap = (stats.sitemap_urls || 0) > 0;
-
-  chart.data.datasets[1].label = usesSitemap ? "In sitemap" : "Discovered";
+  const bfsMode = isBfsMode(lastHealth, stats);
 
   runMeta.textContent = live.run_id
     ? `run #${live.run_id} · ${live.trigger || "—"} · ${live.seed_url || ""}`
     : "No crawl run yet";
 
   renderCompactBar();
-  syncChart(live);
+  syncChart(live, bfsMode);
 
   eventsEl.innerHTML = live.events.length
     ? live.events.slice().reverse().map((e) => {
