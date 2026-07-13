@@ -33,6 +33,17 @@ header {
 
 h1 { margin: 0; font-size: 1.2rem; font-weight: 600; }
 
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+}
+
+.brand-logo {
+  border-radius: 10px;
+  flex-shrink: 0;
+}
+
 .auth {
   display: flex;
   gap: 0.5rem;

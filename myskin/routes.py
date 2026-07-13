@@ -10,7 +10,7 @@ from myskin.crawl_runner import CrawlAlreadyRunningError, crawl_runner
 from myskin.crawler.config import crawl_settings
 from myskin.crawler.live import crawl_live
 from myskin.crawler.state import CrawlState
-from myskin.dashboard import load_dashboard_html, resolve_crawl_static_file
+from myskin.dashboard import brand_logo_path, load_dashboard_html, resolve_crawl_static_file
 from myskin.formats import guess_mime_type
 from myskin.models import (
     CrawlLiveEventModel,
@@ -83,6 +83,22 @@ _CRAWL_STATIC_MEDIA = {
     ".css": "text/css; charset=utf-8",
     ".js": "application/javascript; charset=utf-8",
 }
+
+
+@router.get("/favicon.ico", include_in_schema=False)
+async def favicon() -> FileResponse:
+    logo = brand_logo_path()
+    if not logo.is_file():
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
+    return FileResponse(logo, media_type="image/png")
+
+
+@router.get("/static/brand/myskin-logo.png", include_in_schema=False)
+async def brand_logo() -> FileResponse:
+    logo = brand_logo_path()
+    if not logo.is_file():
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
+    return FileResponse(logo, media_type="image/png")
 
 
 @router.get("/crawl", response_class=HTMLResponse, tags=["crawl"])

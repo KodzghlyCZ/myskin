@@ -3,6 +3,12 @@ from __future__ import annotations
 from pathlib import Path
 
 _CRAWL_STATIC_DIR = Path(__file__).resolve().parent / "static" / "crawl"
+_BRAND_DIR = Path(__file__).resolve().parent / "static" / "brand"
+_LOGO_PATH = _BRAND_DIR / "myskin-logo.png"
+
+
+def brand_logo_path() -> Path:
+    return _LOGO_PATH
 
 
 def crawl_static_dir() -> Path:

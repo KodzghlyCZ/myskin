@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/myskin-logo.png" alt="myskin logo — documents crawling into skin" width="180">
+</p>
+
 # myskin
 
 > *Crawling in my skin…* — Chester Bennington  
