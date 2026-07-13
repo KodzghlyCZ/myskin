@@ -13,3 +13,6 @@ build/
 .mypy_cache/
 .myskin/
 config.local.yaml
+config.yaml
+./data/*
+./convos
