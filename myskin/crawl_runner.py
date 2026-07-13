@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 
 from myskin.crawler.config import CrawlSettings, crawl_settings
 from myskin.crawler.engine import CrawlEngine, CrawlResult
+from myskin.crawler.progress import CrawlProgressDisplay
 from myskin.crawler.state import CrawlStats
 
 logger = logging.getLogger(__name__)
