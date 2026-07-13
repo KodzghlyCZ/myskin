@@ -51,7 +51,7 @@ class RagflowSettings:
         return secrets().ragflow_api_key
 
 
-@dataclass(frozen=True)
+@dataclass
 class RagflowSyncResult:
     uploaded: int = 0
     updated: int = 0
