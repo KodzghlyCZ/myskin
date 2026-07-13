@@ -14,3 +14,4 @@
 #   enabled: true
 #   api_url: http://localhost:9380
 #   dataset_id: your-dataset-id
+#   state_db: ./.myskin/ragflow_sync.db

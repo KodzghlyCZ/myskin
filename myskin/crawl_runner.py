@@ -9,6 +9,7 @@ from myskin.crawler.config import CrawlSettings, crawl_settings
 from myskin.crawler.engine import CrawlEngine, CrawlResult
 from myskin.crawler.progress import CrawlProgressDisplay
 from myskin.crawler.state import CrawlStats
+from myskin.ragflow_sync import maybe_sync_after_crawl
 
 logger = logging.getLogger(__name__)
 
@@ -69,6 +70,7 @@ class CrawlRunner:
                     result.stats.pdfs_fetched,
                     result.stats.pdfs_updated,
                 )
+            maybe_sync_after_crawl()
             return result
         except Exception as exc:
             snapshot.error = str(exc)

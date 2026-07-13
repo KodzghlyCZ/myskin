@@ -106,21 +106,29 @@ python -m myskin.crawl --max-depth 2 --max-pages 50 -v
 
 ## RAGFlow integration
 
-The catalog is an **index** — metadata plus `file_url` pointing at the real file. RAGFlow (or any connector that fetches by URL) downloads from `/api/files/{id}` with the correct extension and MIME type.
+Two modes — use **one**, not both on the same dataset:
 
-```json
-{
-  "id": "crawl--edu-gov-cz--files--legislativa--zakon.pdf",
-  "title": "zakon",
-  "format": "pdf",
-  "filename": "zakon.pdf",
-  "mime_type": "application/pdf",
-  "file_url": "https://myskin.example.com/api/files/crawl--edu-gov-cz--files--legislativa--zakon.pdf",
-  "updated_at": "2026-07-10T14:22:00Z"
-}
+### Pull: `rest_api` connector (text only)
+
+RAGFlow polls `GET /api/documents`. The connector coerces all content to `.txt` — fine for markdown summaries, useless for PDFs.
+
+### Push: RAGFlow dataset API (recommended for binaries)
+
+Enable `ragflow:` in config. After each crawl, myskin uploads **only changed** files via `POST /api/v1/datasets/{id}/documents`, tracks `myskin_id → ragflow_document_id` in `ragflow.state_db`, deletes removed docs, and triggers parsing.
+
+```yaml
+ragflow:
+  enabled: true
+  api_url: https://ragflow.example.com
+  dataset_id: "<dataset-id>"
+  sync_on_crawl_complete: true
 ```
 
-Set `api.public_base_url` so every catalog item gets a `file_url`. Configure your RAGFlow connector to use `file_url` (and `poll_timestamp_field=updated_at`).
+Env: `MYSKIN_RAGFLOW_API_KEY=<ragflow-api-key>`
+
+Manual trigger: `POST /api/ragflow/sync` (Bearer myskin token).
+
+The catalog (`GET /api/documents`) still exposes metadata + `file_url` for debugging or other consumers.
 
 Full setup: [docs/RUNBOOK.md](docs/RUNBOOK.md) and `config.yaml.example`.
 

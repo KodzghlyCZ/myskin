@@ -49,3 +49,14 @@ scheduler:
   interval_minutes: null
   run_on_startup: false
   timezone: UTC
+
+# Push changed files to RAGFlow via dataset API (native PDF/DOCX parsing).
+# Disable the rest_api connector on the same dataset to avoid duplicate ingestion.
+ragflow:
+  enabled: false
+  api_url: https://ragflow.example.com
+  dataset_id: ""
+  state_db: ./.myskin/ragflow_sync.db
+  sync_on_crawl_complete: true
+  parse_on_upload: true
+  delete_missing: true
