@@ -176,6 +176,7 @@ async def health() -> HealthResponse:
         document_count=len(docs),
         data_dir=str(settings.data_dir.resolve()),
         catalog_by_format=stats["by_format"],
+        catalog_passthrough_count=stats["passthrough_count"],
         catalog_with_file_url=stats["with_file_url"],
         passthrough_enabled=crawl_settings.passthrough_enabled,
         passthrough_extensions=sorted(crawl_settings.passthrough_extensions),

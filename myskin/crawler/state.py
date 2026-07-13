@@ -32,6 +32,7 @@ class CrawlStats:
     pages_failed: int = 0
     pdfs_failed: int = 0
     discovered: int = 0
+    files_discovered: int = 0
     sitemap_urls: int = 0
     sitemap_queued: int = 0
     sitemap_skipped: int = 0

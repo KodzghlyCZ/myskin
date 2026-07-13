@@ -28,6 +28,7 @@ class HealthResponse(BaseModel):
     document_count: int
     data_dir: str
     catalog_by_format: dict[str, int] = Field(default_factory=dict)
+    catalog_passthrough_count: int = 0
     catalog_with_file_url: int = 0
     passthrough_enabled: bool | None = None
     passthrough_extensions: list[str] | None = None
@@ -49,6 +50,7 @@ class CrawlStatsModel(BaseModel):
     pages_failed: int = 0
     pdfs_failed: int = 0
     discovered: int = 0
+    files_discovered: int = 0
     sitemap_urls: int = 0
     sitemap_queued: int = 0
     sitemap_skipped: int = 0

@@ -3,9 +3,11 @@ const tokenInput = document.getElementById("token");
 const errorEl = document.getElementById("error");
 const statePill = document.getElementById("statePill");
 const runMeta = document.getElementById("runMeta");
-const statsGrid = document.getElementById("statsGrid");
-const catalogGrid = document.getElementById("catalogGrid");
+const compactBar = document.getElementById("compactBar");
 const eventsEl = document.getElementById("events");
+
+let lastHealth = null;
+let lastLiveData = null;
 
 tokenInput.value = localStorage.getItem(TOKEN_KEY) || "";
 document.getElementById("saveToken").onclick = () => {
@@ -22,8 +24,8 @@ const chart = new Chart(ctx, {
       {
         label: "Queue",
         data: [],
-        borderColor: "#5b9fd4",
-        backgroundColor: "rgba(91,159,212,0.12)",
+        borderColor: "#e8b84a",
+        backgroundColor: "rgba(232,184,74,0.12)",
         tension: 0.1,
         fill: true,
         pointRadius: 0,
@@ -40,7 +42,8 @@ const chart = new Chart(ctx, {
       {
         label: "Processed",
         data: [],
-        borderColor: "#e8b84a",
+        borderColor: "#5b9fd4",
+        backgroundColor: "rgba(91,159,212,0.08)",
         tension: 0.1,
         fill: false,
         pointRadius: 0,
@@ -130,15 +133,18 @@ function syncChart(live) {
   chartSampleLen = samples.length;
 }
 
-function card(label, value, { tone = "", sub = "" } = {}) {
+function metric(label, value, tone = "") {
   const toneClass = tone ? ` ${tone}` : "";
-  const subHtml = sub ? `<div class="sub">${sub}</div>` : "";
-  return `<div class="card"><div class="label">${label}</div><div class="value${toneClass}">${value}</div>${subHtml}</div>`;
+  return `<span class="metric${toneClass}"><span class="m-label">${label}</span><span class="m-val">${value}</span></span>`;
 }
 
-function statGroup(title, cards, { cols = 2 } = {}) {
-  const gridClass = cols === 1 ? "stat-grid cols-1" : "stat-grid";
-  return `<section class="stat-group"><h2 class="stat-group-title">${title}</h2><div class="${gridClass}">${cards.join("")}</div></section>`;
+function sep() {
+  return `<span class="sep">·</span>`;
+}
+
+function badge(text, tone = "") {
+  const toneClass = tone ? ` ${tone}` : "";
+  return `<span class="badge${toneClass}">${text}</span>`;
 }
 
 function escapeHtml(text) {
@@ -176,54 +182,85 @@ async function api(path, options = {}) {
   return res.json();
 }
 
-function renderCatalog(health) {
-  if (!health) {
-    catalogGrid.innerHTML = "";
-    return;
+function renderCompactBar() {
+  const health = lastHealth;
+  const data = lastLiveData;
+  const live = data?.live;
+  const stats = live?.stats || {};
+  const rows = [];
+
+  if (health) {
+    const formats = health.catalog_by_format || {};
+    const fmtParts = Object.keys(formats).sort().map((fmt) =>
+      metric(fmt.toUpperCase(), formats[fmt], fmt === "md" ? "accent" : "")
+    );
+
+    const catalogParts = [
+      metric("Docs", health.document_count, "accent"),
+      metric("PT catalog", health.catalog_passthrough_count || 0),
+      metric("URLs", health.catalog_with_file_url || 0, health.catalog_with_file_url ? "ok" : "warn"),
+      ...fmtParts,
+    ];
+
+    rows.push(`<div class="compact-row">${catalogParts.join(sep())}</div>`);
+    rows.push(`<div class="compact-row badges">${[
+      badge(health.passthrough_enabled ? "passthrough" : "no passthrough", health.passthrough_enabled ? "ok" : ""),
+      badge(health.follow_file_links === false ? "file links off" : "file links", health.follow_file_links === false ? "" : "ok"),
+      health.sitemap_only ? badge("sitemap", "accent") : badge("link crawl"),
+      health.public_base_url ? badge("public URL", "ok") : badge("no public URL", "warn"),
+    ].join("")}</div>`);
   }
-  const formats = health.catalog_by_format || {};
-  const formatCards = Object.keys(formats).sort().map((fmt) =>
-    card(fmt.toUpperCase(), formats[fmt], { tone: fmt === "md" ? "accent" : "" })
-  );
-  const extList = (health.passthrough_extensions || []).join(", ") || "—";
-  const groups = [
-    statGroup("Catalog", [
-      card("Documents", health.document_count, { tone: "accent" }),
-      card("With file URL", health.catalog_with_file_url || 0, {
-        tone: health.catalog_with_file_url ? "ok" : "warn",
-        sub: health.public_base_url ? "ready for RAGFlow" : "set api.public_base_url",
-      }),
-    ]),
-    statGroup("Formats", formatCards.length ? formatCards : [
-      card("No documents", "0", { sub: "Run a crawl to populate data/" }),
-    ], { cols: formatCards.length > 2 ? 2 : 1 }),
-    statGroup("Ingestion", [
-      card("Passthrough", health.passthrough_enabled ? "on" : "off", {
-        tone: health.passthrough_enabled ? "ok" : "",
-        sub: extList,
-      }),
-      card("File links", health.follow_file_links === false ? "off" : "on", {
-        tone: health.follow_file_links === false ? "" : "ok",
-        sub: health.sitemap_only ? "hybrid sitemap mode" : "link crawl",
-      }),
-      card("Public URL", health.public_base_url || "not set", {
-        sub: health.public_base_url ? "file_url enabled" : "set api.public_base_url",
-      }),
-    ], { cols: 1 }),
-  ];
-  catalogGrid.innerHTML = groups.join("");
+
+  if (live?.run_id) {
+    const processed = (stats.pages_fetched || 0) + (stats.pdfs_fetched || 0);
+    const pct = live.max_pages ? Math.min(100, Math.round((processed / live.max_pages) * 100)) : 0;
+    const usesSitemap = (stats.sitemap_urls || 0) > 0;
+
+    const runParts = [
+      metric("Processed", `${processed} (${pct}%)`, "accent"),
+      metric("Queue", live.queue_pending, live.queue_pending ? "warn" : ""),
+    ];
+
+    if (usesSitemap) {
+      runParts.push(metric("Sitemap", stats.sitemap_urls));
+      runParts.push(metric("Queued", stats.sitemap_queued, stats.sitemap_queued ? "warn" : ""));
+      runParts.push(metric("Skipped", stats.sitemap_skipped));
+    } else {
+      runParts.push(metric("Links", stats.discovered, "accent"));
+    }
+
+    rows.push(`<div class="compact-row">${runParts.join(sep())}</div>`);
+    rows.push(`<div class="compact-row">${[
+      '<span class="row-label">Pages</span>',
+      metric("upd", stats.pages_updated, "ok"),
+      metric("same", stats.pages_unchanged),
+      metric("fail", stats.pages_failed, stats.pages_failed ? "bad" : ""),
+      metric("fetch", stats.pages_fetched),
+    ].join(sep())}</div>`);
+    rows.push(`<div class="compact-row">${[
+      '<span class="row-label">Files</span>',
+      metric("found", stats.files_discovered || 0, "accent"),
+      metric("upd", stats.pdfs_updated, "ok"),
+      metric("same", stats.pdfs_unchanged),
+      metric("fail", stats.pdfs_failed, stats.pdfs_failed ? "bad" : ""),
+      metric("fetch", stats.pdfs_fetched),
+    ].join(sep())}</div>`);
+  } else if (!health) {
+    rows.push('<div class="compact-row" style="color:var(--muted)">Waiting for data…</div>');
+  }
+
+  compactBar.innerHTML = rows.join("");
 }
 
 function render(data) {
+  lastLiveData = data;
   const running = data.running;
   statePill.textContent = running ? "running" : "idle";
   statePill.className = "pill " + (running ? "running" : "idle");
 
   const live = data.live;
-  const stats = live.stats;
-  const processed = stats.pages_fetched + stats.pdfs_fetched;
-  const pct = live.max_pages ? Math.min(100, Math.round((processed / live.max_pages) * 100)) : 0;
-  const usesSitemap = stats.sitemap_urls > 0;
+  const stats = live.stats || {};
+  const usesSitemap = (stats.sitemap_urls || 0) > 0;
 
   chart.data.datasets[1].label = usesSitemap ? "In sitemap" : "Discovered";
 
@@ -231,52 +268,7 @@ function render(data) {
     ? `run #${live.run_id} · ${live.trigger || "—"} · ${live.seed_url || ""}`
     : "No crawl run yet";
 
-  const groups = [
-    statGroup("Run", [
-      card("Processed", `${processed}`, {
-        tone: "accent",
-        sub: `${pct}% of ${live.max_pages} max`,
-      }),
-      card("Queue", live.queue_pending, { tone: live.queue_pending ? "warn" : "" }),
-    ]),
-  ];
-
-  if (usesSitemap) {
-    groups.push(statGroup("Sitemap", [
-      card("Discovered", stats.sitemap_urls, {
-        tone: "accent",
-        sub: "URLs in XML",
-      }),
-      card("To crawl", stats.sitemap_queued, {
-        tone: stats.sitemap_queued ? "warn" : "",
-        sub: "queued this run",
-      }),
-      card("Skipped", stats.sitemap_skipped, {
-        sub: "unchanged by lastmod",
-      }),
-    ]));
-  } else {
-    groups.push(statGroup("Discovery", [
-      card("Links found", stats.discovered, { tone: "accent" }),
-    ], { cols: 1 }));
-  }
-
-  groups.push(statGroup("Pages", [
-    card("Updated", stats.pages_updated, { tone: "ok" }),
-    card("Unchanged", stats.pages_unchanged),
-    card("Failed", stats.pages_failed, { tone: stats.pages_failed ? "bad" : "" }),
-    card("Fetched", stats.pages_fetched),
-  ]));
-
-  groups.push(statGroup("Passthrough files", [
-    card("Updated", stats.pdfs_updated, { tone: "ok" }),
-    card("Unchanged", stats.pdfs_unchanged),
-    card("Failed", stats.pdfs_failed, { tone: stats.pdfs_failed ? "bad" : "" }),
-    card("Fetched", stats.pdfs_fetched),
-  ]));
-
-  statsGrid.innerHTML = groups.join("");
-
+  renderCompactBar();
   syncChart(live);
 
   eventsEl.innerHTML = live.events.length
@@ -291,9 +283,11 @@ async function refreshHealth() {
   try {
     const res = await fetch("/health");
     if (!res.ok) return;
-    renderCatalog(await res.json());
+    lastHealth = await res.json();
+    renderCompactBar();
   } catch (_) {
-    catalogGrid.innerHTML = "";
+    lastHealth = null;
+    renderCompactBar();
   }
 }
 

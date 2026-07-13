@@ -178,6 +178,13 @@ def scan_documents(data_dir: Path | None = None) -> list[DocumentItem]:
     ]
 
 
+_TEXT_FORMATS = frozenset({"md", "markdown", "txt", "text"})
+
+
+def passthrough_catalog_count(by_format: dict[str, int]) -> int:
+    return sum(count for fmt, count in by_format.items() if fmt not in _TEXT_FORMATS)
+
+
 def catalog_stats(documents: list[DocumentItem] | None = None) -> dict[str, dict[str, int]]:
     items = documents if documents is not None else scan_documents()
     by_format: dict[str, int] = {}
@@ -186,7 +193,11 @@ def catalog_stats(documents: list[DocumentItem] | None = None) -> dict[str, dict
         by_format[doc.format] = by_format.get(doc.format, 0) + 1
         if doc.file_url:
             with_url += 1
-    return {"by_format": by_format, "with_file_url": with_url}
+    return {
+        "by_format": by_format,
+        "passthrough_count": passthrough_catalog_count(by_format),
+        "with_file_url": with_url,
+    }
 
 
 def paginate(

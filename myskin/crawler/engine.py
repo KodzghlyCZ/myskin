@@ -59,6 +59,7 @@ class CrawlEngine:
         self.data_dir = self.settings.data_dir.resolve()
         self.data_dir.mkdir(parents=True, exist_ok=True)
         self.progress = progress
+        self._run_stats: CrawlStats | None = None
 
     def run(self, *, trigger: str = "manual") -> CrawlResult:
         seed = normalize_url(self.settings.seed_url)
@@ -66,67 +67,71 @@ class CrawlEngine:
             raise ValueError(f"Invalid seed URL: {self.settings.seed_url!r}")
 
         stats = CrawlStats()
+        self._run_stats = stats
         run_id = self.state.start_run(seed.normalized)
 
-        robots = RobotsCache(self.settings.user_agent) if self.settings.respect_robots else None
+        try:
+            robots = RobotsCache(self.settings.user_agent) if self.settings.respect_robots else None
 
-        with Fetcher(
-            user_agent=self.settings.user_agent,
-            delay_seconds=self.settings.request_delay,
-        ) as fetcher:
-            queue, frontier, sitemap_info = self._build_queue(seed, fetcher)
-            if sitemap_info:
-                stats.discovered = sitemap_info.total
-                stats.sitemap_urls = sitemap_info.total
-                stats.sitemap_queued = sitemap_info.queued
-                stats.sitemap_skipped = sitemap_info.skipped
-
-            if self.progress:
-                self.progress.start(
-                    run_id=run_id,
-                    seed_url=seed.normalized,
-                    queue_size=len(queue),
-                    max_pages=self.settings.max_pages,
-                    trigger=trigger,
-                    initial_stats=stats,
-                )
-
-            while queue and stats.pages_fetched + stats.pdfs_fetched < self.settings.max_pages:
-                item = queue.popleft()
-
-                parsed = normalize_url(item.url)
-                if not parsed or not is_in_scope(parsed, seed):
-                    continue
-
-                if robots and not robots.allowed(parsed.normalized):
-                    self._report(
-                        "page", "blocked", stats, url=parsed.normalized, label=parsed.normalized
-                    )
-                    continue
-
-                if is_css_url(parsed.normalized):
-                    self._report(
-                        "page", "skipped", stats, url=parsed.normalized, label=parsed.normalized
-                    )
-                    continue
-
-                if self._is_file_resource(parsed, fetcher=None):
-                    self._process_file(parsed, fetcher, stats, frontier=frontier)
-                else:
-                    discovered = self._process_page(
-                        parsed, seed, item.depth, fetcher, stats, frontier
-                    )
-                    if not self.settings.sitemap_url:
-                        stats.discovered += discovered
+            with Fetcher(
+                user_agent=self.settings.user_agent,
+                delay_seconds=self.settings.request_delay,
+            ) as fetcher:
+                queue, frontier, sitemap_info = self._build_queue(seed, fetcher)
+                if sitemap_info:
+                    stats.discovered = sitemap_info.total
+                    stats.sitemap_urls = sitemap_info.total
+                    stats.sitemap_queued = sitemap_info.queued
+                    stats.sitemap_skipped = sitemap_info.skipped
 
                 if self.progress:
-                    self.progress.set_queue_pending(len(queue))
+                    self.progress.start(
+                        run_id=run_id,
+                        seed_url=seed.normalized,
+                        queue_size=len(queue),
+                        max_pages=self.settings.max_pages,
+                        trigger=trigger,
+                        initial_stats=stats,
+                    )
 
-        if self.progress:
-            self.progress.finish(stats)
+                while queue and stats.pages_fetched + stats.pdfs_fetched < self.settings.max_pages:
+                    item = queue.popleft()
 
-        self.state.finish_run(run_id, stats)
-        return CrawlResult(stats=stats, run_id=run_id)
+                    parsed = normalize_url(item.url)
+                    if not parsed or not is_in_scope(parsed, seed):
+                        continue
+
+                    if robots and not robots.allowed(parsed.normalized):
+                        self._report(
+                            "page", "blocked", stats, url=parsed.normalized, label=parsed.normalized
+                        )
+                        continue
+
+                    if is_css_url(parsed.normalized):
+                        self._report(
+                            "page", "skipped", stats, url=parsed.normalized, label=parsed.normalized
+                        )
+                        continue
+
+                    if self._is_file_resource(parsed, fetcher=None):
+                        self._process_file(parsed, fetcher, stats, frontier=frontier)
+                    else:
+                        discovered = self._process_page(
+                            parsed, seed, item.depth, fetcher, stats, frontier
+                        )
+                        if not self.settings.sitemap_url:
+                            stats.discovered += discovered
+
+                    if self.progress:
+                        self.progress.set_queue_pending(len(queue))
+
+            if self.progress:
+                self.progress.finish(stats)
+
+            self.state.finish_run(run_id, stats)
+            return CrawlResult(stats=stats, run_id=run_id)
+        finally:
+            self._run_stats = None
 
     def _build_queue(
         self, seed: ParsedUrl, fetcher: Fetcher
@@ -220,6 +225,8 @@ class CrawlEngine:
         frontier.enqueued_urls.add(parsed.normalized)
         frontier.enqueued_paths.add(rel_path)
         frontier.queue.append(QueuedUrl(parsed.normalized, depth))
+        if resource_type == "file" and self._run_stats is not None:
+            self._run_stats.files_discovered += 1
         return True
 
     def _skip_already_updated(
