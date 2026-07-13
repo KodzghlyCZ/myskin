@@ -1,6 +1,16 @@
 # Optional local overrides (copy to config.local.yaml — gitignored)
 # api:
 #   port: 8081
+#   public_base_url: http://localhost:8080
 # crawler:
 #   max_pages: 50
 #   max_depth: 2
+#   passthrough:
+#     enabled: true
+#     extract_pdf_text: false
+# crawler:
+#   follow_file_links: true
+# ragflow:
+#   enabled: true
+#   api_url: http://localhost:9380
+#   dataset_id: your-dataset-id

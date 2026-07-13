@@ -7,7 +7,6 @@ from datetime import datetime, timezone
 
 from myskin.crawler.config import CrawlSettings, crawl_settings
 from myskin.crawler.engine import CrawlEngine, CrawlResult
-from myskin.crawler.progress import CrawlProgressDisplay
 from myskin.crawler.state import CrawlStats
 
 logger = logging.getLogger(__name__)
@@ -62,7 +61,7 @@ class CrawlRunner:
             snapshot.finished_at = _utcnow()
             if not display.uses_tty:
                 logger.info(
-                    "Crawl #%s finished: pages=%s updated=%s, pdfs=%s updated=%s",
+                    "Crawl #%s finished: pages=%s updated=%s, files=%s updated=%s",
                     result.run_id,
                     result.stats.pages_fetched,
                     result.stats.pages_updated,

@@ -6,7 +6,13 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
 from myskin.crawler.config import CrawlSettings, QueuedUrl, crawl_settings
-from myskin.crawler.extract import extract_page, extract_pdf_text, pdf_title_from_url
+from myskin.crawler.extract import (
+    PageExtract,
+    extract_page,
+    extract_pdf_text,
+    file_title_from_url,
+    pdf_title_from_url,
+)
 from myskin.crawler.fetch import Fetcher, FetchResult, RobotsCache
 from myskin.crawler.state import CrawlState, CrawlStats, ResourceRecord
 from myskin.crawler.urls import (
@@ -20,7 +26,8 @@ from myskin.crawler.urls import (
 )
 from myskin.crawler.progress import CrawlProgressDisplay
 from myskin.crawler.sitemap import SitemapEntry, load_sitemap_entries
-from myskin.crawler.writer import parse_http_date, remove_file, write_markdown
+from myskin.crawler.writer import parse_http_date, remove_file, write_binary, write_markdown
+from myskin.formats import extension_from_content_type, extension_from_url, format_label, normalize_extension
 
 logger = logging.getLogger(__name__)
 
@@ -103,8 +110,8 @@ class CrawlEngine:
                     )
                     continue
 
-                if is_pdf_url(parsed.normalized):
-                    self._process_pdf(parsed, fetcher, stats, frontier=frontier)
+                if self._is_file_resource(parsed, fetcher=None):
+                    self._process_file(parsed, fetcher, stats, frontier=frontier)
                 else:
                     discovered = self._process_page(
                         parsed, seed, item.depth, fetcher, stats, frontier
@@ -168,7 +175,7 @@ class CrawlEngine:
             if not self._needs_sitemap_crawl(parsed.normalized, entry.lastmod):
                 skipped += 1
                 continue
-            rtype = "pdf" if is_pdf_url(parsed.normalized) else "page"
+            rtype = "file" if self._is_file_resource(parsed) else "page"
             if self._enqueue_url(frontier, parsed, depth=0, resource_type=rtype):
                 queued += 1
         return queued, skipped
@@ -182,7 +189,7 @@ class CrawlEngine:
         return sitemap_lastmod > existing.last_changed_at
 
     def _enqueue_link_crawl(self, frontier: _CrawlFrontier, seed: ParsedUrl) -> None:
-        resource_type = "pdf" if is_pdf_url(seed.normalized) else "page"
+        resource_type = "file" if self._is_file_resource(seed) else "page"
         self._enqueue_url(frontier, seed, depth=0, resource_type=resource_type)
 
         if self.settings.refresh_known:
@@ -192,7 +199,7 @@ class CrawlEngine:
                     continue
                 if is_css_url(parsed.normalized):
                     continue
-                rtype = "pdf" if is_pdf_url(parsed.normalized) else "page"
+                rtype = "file" if self._is_file_resource(parsed) else "page"
                 self._enqueue_url(frontier, parsed, depth=0, resource_type=rtype)
 
     def _enqueue_url(
@@ -268,7 +275,15 @@ class CrawlEngine:
 
         if "pdf" in result.content_type or is_pdf_url(result.url):
             stats.pages_fetched -= 1
-            self._process_pdf(parsed, fetcher, stats, frontier=frontier, result=result)
+            if self._is_file_resource(parsed):
+                self._process_file(parsed, fetcher, stats, frontier=frontier, result=result)
+            else:
+                self._process_pdf_text(parsed, fetcher, stats, frontier=frontier, result=result)
+            return 0
+
+        if self.settings.should_passthrough(parsed.normalized, result.content_type):
+            stats.pages_fetched -= 1
+            self._process_file(parsed, fetcher, stats, frontier=frontier, result=result)
             return 0
 
         if "css" in result.content_type:
@@ -281,8 +296,17 @@ class CrawlEngine:
             self._report("page", "skipped", stats, url=parsed.normalized, label=rel_path)
             return 0
 
+        if not self.settings.html_to_markdown:
+            stats.pages_failed += 1
+            self._report("page", "skipped", stats, url=parsed.normalized, label=rel_path)
+            return 0
+
         try:
-            page = extract_page(result.content, parsed.normalized)
+            page = extract_page(
+                result.content,
+                parsed.normalized,
+                passthrough_extensions=self.settings.passthrough_extensions,
+            )
         except Exception as exc:
             stats.pages_failed += 1
             self._report("page", "failed", stats, url=parsed.normalized, label=rel_path)
@@ -313,26 +337,116 @@ class CrawlEngine:
             stats.pages_unchanged += 1
             self._report("page", "unchanged", stats, url=parsed.normalized, label=rel_path)
 
-        discovered = 0
-        if (
-            not self.settings.sitemap_only
-            and depth < self.settings.max_depth
-        ):
-            for link in (*page.page_links, *page.pdf_links):
-                link_parsed = normalize_url(link)
-                if not link_parsed or not is_in_scope(link_parsed, seed):
-                    continue
-                if is_css_url(link_parsed.normalized):
-                    continue
-                rtype = "pdf" if is_pdf_url(link_parsed.normalized) else "page"
-                if self._enqueue_url(
-                    frontier, link_parsed, depth=depth + 1, resource_type=rtype
-                ):
-                    discovered += 1
+        discovered = self._enqueue_discovered_links(page, seed, frontier, depth)
 
         return discovered
 
-    def _process_pdf(
+    def _enqueue_discovered_links(
+        self,
+        page: PageExtract,
+        seed: ParsedUrl,
+        frontier: _CrawlFrontier,
+        depth: int,
+    ) -> int:
+        follow_pages = not self.settings.sitemap_only and depth < self.settings.max_depth
+        follow_files = self.settings.follow_file_links or follow_pages
+
+        discovered = 0
+        if follow_files:
+            for link in page.file_links:
+                discovered += self._enqueue_discovered_link(link, seed, frontier, depth=0)
+        if follow_pages:
+            for link in page.page_links:
+                discovered += self._enqueue_discovered_link(link, seed, frontier, depth=depth + 1)
+        return discovered
+
+    def _enqueue_discovered_link(
+        self,
+        link: str,
+        seed: ParsedUrl,
+        frontier: _CrawlFrontier,
+        *,
+        depth: int,
+    ) -> int:
+        link_parsed = normalize_url(link)
+        if not link_parsed or not is_in_scope(link_parsed, seed):
+            return 0
+        if is_css_url(link_parsed.normalized):
+            return 0
+        rtype = "file" if self._is_file_resource(link_parsed) else "page"
+        return (
+            1
+            if self._enqueue_url(frontier, link_parsed, depth=depth, resource_type=rtype)
+            else 0
+        )
+
+    def _is_file_resource(self, parsed: ParsedUrl, *, fetcher: Fetcher | None = None) -> bool:
+        if is_pdf_url(parsed.normalized) and self.settings.extract_pdf_text:
+            return False
+        return self.settings.should_passthrough(parsed.normalized)
+
+    def _process_file(
+        self,
+        parsed: ParsedUrl,
+        fetcher: Fetcher,
+        stats: CrawlStats,
+        *,
+        frontier: _CrawlFrontier,
+        result: FetchResult | None = None,
+    ) -> None:
+        ext = extension_from_url(parsed.normalized)
+        if not ext and result is not None:
+            ext = extension_from_content_type(result.content_type)
+        ext = normalize_extension(ext) or ".bin"
+        rel_path = url_to_relative_path(parsed, resource_type="file", extension=ext)
+        if self._skip_already_updated(
+            frontier, kind="file", rel_path=rel_path, url=parsed.normalized, stats=stats
+        ):
+            return
+
+        stats.pdfs_fetched += 1
+
+        if result is None:
+            try:
+                result = fetcher.fetch(parsed.normalized)
+            except Exception as exc:
+                stats.pdfs_failed += 1
+                self._report("file", "failed", stats, url=parsed.normalized, label=rel_path)
+                logger.warning("Failed to fetch file %s: %s", parsed.normalized, exc)
+                return
+
+        if result.status_code == 404:
+            stats.pdfs_failed += 1
+            self._remove_gone(parsed.normalized)
+            self._report("file", "failed", stats, url=parsed.normalized, label=rel_path)
+            return
+
+        if result.status_code >= 400:
+            stats.pdfs_failed += 1
+            self._report("file", "failed", stats, url=parsed.normalized, label=rel_path)
+            return
+
+        digest = content_hash(result.content)
+        changed = self._store_binary_resource(
+            url=parsed.normalized,
+            resource_type="file",
+            rel_path=rel_path,
+            title=file_title_from_url(parsed),
+            data=result.content,
+            category=format_label(ext),
+            file_format=format_label(ext),
+            digest=digest,
+            result=result,
+            frontier=frontier,
+        )
+        if changed:
+            stats.pdfs_updated += 1
+            self._report("file", "updated", stats, url=parsed.normalized, label=rel_path)
+        else:
+            stats.pdfs_unchanged += 1
+            self._report("file", "unchanged", stats, url=parsed.normalized, label=rel_path)
+
+    def _process_pdf_text(
         self,
         parsed: ParsedUrl,
         fetcher: Fetcher,
@@ -452,6 +566,79 @@ class CrawlEngine:
             category=category,
             content_hash=digest,
             updated_at=changed_at,
+        )
+
+        self.state.upsert_resource(
+            ResourceRecord(
+                url=url,
+                resource_type=resource_type,
+                local_path=rel_path,
+                content_hash=digest,
+                title=title,
+                etag=result.etag,
+                last_modified=result.last_modified,
+                last_crawled_at=now,
+                last_changed_at=changed_at,
+                http_status=result.status_code,
+            )
+        )
+        frontier.updated_paths.add(rel_path)
+        return True
+
+    def _store_binary_resource(
+        self,
+        *,
+        url: str,
+        resource_type: str,
+        rel_path: str,
+        title: str,
+        data: bytes,
+        category: str,
+        file_format: str,
+        digest: str,
+        result: FetchResult,
+        frontier: _CrawlFrontier,
+    ) -> bool:
+        if rel_path in frontier.updated_paths:
+            return False
+
+        now = _utcnow()
+        existing = self.state.get_resource(url)
+        if existing is None:
+            existing = self.state.get_resource_by_local_path(rel_path)
+        http_dt = parse_http_date(result.last_modified)
+
+        if existing and existing.content_hash == digest:
+            if existing.url != url:
+                self.state.delete_resource(existing.url)
+            self.state.upsert_resource(
+                ResourceRecord(
+                    url=url,
+                    resource_type=resource_type,
+                    local_path=existing.local_path,
+                    content_hash=digest,
+                    title=title,
+                    etag=result.etag or existing.etag,
+                    last_modified=result.last_modified or existing.last_modified,
+                    last_crawled_at=now,
+                    last_changed_at=existing.last_changed_at,
+                    http_status=result.status_code,
+                )
+            )
+            return False
+
+        changed_at = http_dt or now
+        if existing and existing.url != url:
+            self.state.delete_resource(existing.url)
+        write_binary(
+            self.data_dir / rel_path,
+            data,
+            title=title,
+            source_url=url,
+            category=category,
+            content_hash=digest,
+            updated_at=changed_at,
+            file_format=file_format,
         )
 
         self.state.upsert_resource(

@@ -6,10 +6,16 @@ from pydantic import BaseModel, Field
 class DocumentItem(BaseModel):
     id: str
     title: str
-    body: str
     updated_at: datetime
     author: str = "myskin"
     category: str = "general"
+    format: str = Field(default="md", description="File format (md, pdf, docx, …)")
+    filename: str = Field(default="", description="On-disk filename with extension")
+    mime_type: str = Field(default="application/octet-stream")
+    file_url: str | None = Field(
+        default=None,
+        description="Download URL for the file (requires api.public_base_url)",
+    )
 
 
 class DocumentListResponse(BaseModel):
@@ -21,6 +27,13 @@ class HealthResponse(BaseModel):
     status: str
     document_count: int
     data_dir: str
+    catalog_by_format: dict[str, int] = Field(default_factory=dict)
+    catalog_with_file_url: int = 0
+    passthrough_enabled: bool | None = None
+    passthrough_extensions: list[str] | None = None
+    sitemap_only: bool | None = None
+    follow_file_links: bool | None = None
+    public_base_url: str | None = None
     crawl_resources: int | None = None
     scheduler_enabled: bool | None = None
     crawl_running: bool | None = None

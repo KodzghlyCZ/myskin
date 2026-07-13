@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>myskin crawl dashboard</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+  <link rel="stylesheet" href="/crawl/static/dashboard.css">
+</head>
+<body>
+  <header>
+    <h1>myskin crawl dashboard</h1>
+    <div class="auth">
+      <input id="token" type="password" placeholder="API token" size="24" autocomplete="off">
+      <button id="saveToken" type="button">Save token</button>
+      <button id="startCrawl" type="button">Start crawl</button>
+    </div>
+  </header>
+  <main>
+    <div id="error"></div>
+    <div class="status-row">
+      <span id="statePill" class="pill idle">idle</span>
+      <span id="runMeta" class="meta"></span>
+    </div>
+    <div class="stats-layout" id="catalogGrid"></div>
+    <div class="stats-layout" id="statsGrid"></div>
+    <div class="chart-wrap">
+      <canvas id="chart"></canvas>
+    </div>
+    <h2 class="events-heading">Recent pages</h2>
+    <div class="events" id="events"></div>
+  </main>
+  <script src="/crawl/static/dashboard.js"></script>
+</body>
+</html>

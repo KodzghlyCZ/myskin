@@ -3,7 +3,7 @@
 > *Crawling in my skin…* — Chester Bennington  
 > *Oh, oh yeah the bindis! Oh, there's bindis everywhere! Oh, embedded in the skin!* — Clarence Claymore
 
-Self-hosted service that **crawls** web pages and PDFs, stores them as markdown, and **serves** them to [RAGFlow](https://github.com/infiniflow/ragflow) via the `rest_api` data source connector.
+Self-hosted service that **crawls** web pages and linked documents, stores them in format-aware files (HTML→markdown, PDF/DOC/DOCX passthrough), and **serves** them to [RAGFlow](https://github.com/infiniflow/ragflow).
 
 **Maintainers:** [docs/RUNBOOK.md](docs/RUNBOOK.md) · [Česky](docs/RUNBOOK.cs.md)
 
@@ -62,11 +62,16 @@ The internal scheduler runs crawls automatically — no host cron required.
 | `MYSKIN_CRAWL_RESPECT_ROBOTS` | `true` | Honor robots.txt |
 | `MYSKIN_CRAWL_REFRESH_KNOWN` | `true` | Re-check all known URLs each run (link-crawl mode) |
 | `crawler.sitemap_url` | — | Sitemap index/URL set (e.g. `https://edu.gov.cz/sitemap_index.xml`) |
-| `crawler.sitemap_only` | `true` | Only crawl sitemap URLs; skip link following |
+| `crawler.sitemap_only` | `true` | Only crawl sitemap URLs; skip following page `<a>` links |
+| `crawler.follow_file_links` | `true` | In sitemap mode, still queue PDF/DOC/etc. links found on crawled pages |
+| `crawler.html_to_markdown` | `true` | Convert HTML pages to markdown (RAGFlow cannot ingest HTML) |
+| `crawler.passthrough.enabled` | `true` | Store PDF/DOC/DOCX/etc. as native binaries for RAGFlow DeepDoc |
+| `crawler.passthrough.extract_pdf_text` | `false` | Legacy: extract PDF text to `.md` instead of passthrough |
+| `api.public_base_url` | — | **Required** — base URL for `file_url` in catalog (`/api/files/{id}`) |
 
 When `sitemap_url` is set, the crawler loads all nested sitemaps and **only queues URLs whose `<lastmod>` is newer than the last stored change** (or URLs never seen before). Incremental runs stay fast instead of re-fetching the whole site.
 
-Crawled files land in `data/crawl/<host>/pages/` and `pdfs/` with YAML frontmatter (`updated_at` for RAGFlow incremental sync).
+Crawled files land in `data/crawl/<host>/pages/` (markdown) and `files/` (binary) with metadata sidecars. The catalog lists every file and points to its download URL — content is never inlined in JSON.
 
 ## API endpoints
 
@@ -75,6 +80,7 @@ Crawled files land in `data/crawl/<host>/pages/` and `pdfs/` with YAML frontmatt
 | `GET` | `/health` | No | Status, doc count, scheduler/crawl flags |
 | `GET` | `/api/documents` | Bearer | Paginated catalog for RAGFlow |
 | `GET` | `/api/documents/{id}` | Bearer | Single document |
+| `GET` | `/api/files/{id}` | Bearer | Download any catalog file (md, pdf, docx, …) |
 | `GET` | `/api/crawl/status` | Bearer | Scheduler + last crawl run |
 | `POST` | `/api/crawl/run` | Bearer | Trigger crawl immediately |
 
@@ -93,11 +99,25 @@ One-shot crawl from CLI (also works while service is running if no overlap):
 python -m myskin.crawl --max-depth 2 --max-pages 50 -v
 ```
 
-## RAGFlow connector
+## RAGFlow integration
 
-Point the REST API connector at `https://<public-host>/api/documents` with `items_path=$.items`, `id_field=id`, `content_fields=title,body`, offset pagination, and `poll_timestamp_field=updated_at`. RAGFlow blocks private IPs — use a tunnel for local dev.
+The catalog is an **index** — metadata plus `file_url` pointing at the real file. RAGFlow (or any connector that fetches by URL) downloads from `/api/files/{id}` with the correct extension and MIME type.
 
-Full connector JSON and setup: [docs/RUNBOOK.md](docs/RUNBOOK.md) and `.env.example`.
+```json
+{
+  "id": "crawl--edu-gov-cz--files--legislativa--zakon.pdf",
+  "title": "zakon",
+  "format": "pdf",
+  "filename": "zakon.pdf",
+  "mime_type": "application/pdf",
+  "file_url": "https://myskin.example.com/api/files/crawl--edu-gov-cz--files--legislativa--zakon.pdf",
+  "updated_at": "2026-07-10T14:22:00Z"
+}
+```
+
+Set `api.public_base_url` so every catalog item gets a `file_url`. Configure your RAGFlow connector to use `file_url` (and `poll_timestamp_field=updated_at`).
+
+Full setup: [docs/RUNBOOK.md](docs/RUNBOOK.md) and `config.yaml.example`.
 
 ## GitLab CI/CD
 

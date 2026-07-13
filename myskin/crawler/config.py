@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from myskin.config import settings as app_settings
+from myskin.formats import DEFAULT_PASSTHROUGH_EXTENSIONS, normalize_extension
 from myskin.settings_loader import cfg_bool, cfg_get, cfg_path, ensure_config_loaded
 
 
@@ -30,10 +31,39 @@ class CrawlSettings:
             str(sitemap_url).strip() if sitemap_url else None
         ) or None
         self.sitemap_only: bool = cfg_bool("crawler.sitemap_only", True)
+        self.follow_file_links: bool = cfg_bool("crawler.follow_file_links", True)
+        self.html_to_markdown: bool = cfg_bool("crawler.html_to_markdown", True)
+        self.passthrough_enabled: bool = cfg_bool("crawler.passthrough.enabled", True)
+        self.passthrough_extensions: frozenset[str] = self._load_passthrough_extensions()
+        self.extract_pdf_text: bool = cfg_bool("crawler.passthrough.extract_pdf_text", False)
+
+    @staticmethod
+    def _load_passthrough_extensions() -> frozenset[str]:
+        raw = cfg_get("crawler.passthrough.extensions", default=None)
+        if raw is None:
+            return DEFAULT_PASSTHROUGH_EXTENSIONS
+        if isinstance(raw, str):
+            items = [part.strip() for part in raw.split(",") if part.strip()]
+        elif isinstance(raw, (list, tuple)):
+            items = [str(part).strip() for part in raw if str(part).strip()]
+        else:
+            return DEFAULT_PASSTHROUGH_EXTENSIONS
+        normalized = {normalize_extension(item) for item in items}
+        return frozenset(ext for ext in normalized if ext)
 
     @property
     def data_dir(self) -> Path:
         return app_settings.data_dir
+
+    def should_passthrough(self, url: str, content_type: str = "") -> bool:
+        if not self.passthrough_enabled:
+            return False
+        from myskin.formats import extension_from_content_type, is_passthrough_url
+
+        if is_passthrough_url(url, self.passthrough_extensions):
+            return True
+        ext = extension_from_content_type(content_type)
+        return bool(ext and ext in self.passthrough_extensions)
 
 
 @dataclass(frozen=True)

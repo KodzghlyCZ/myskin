@@ -2,14 +2,14 @@ from __future__ import annotations
 
 import io
 import logging
-import re
 from dataclasses import dataclass
 
 import html2text
 from bs4 import BeautifulSoup
 from pypdf import PdfReader
 
-from myskin.crawler.urls import ParsedUrl, is_pdf_url, normalize_url
+from myskin.crawler.urls import ParsedUrl, is_passthrough_url, normalize_url
+from myskin.formats import DEFAULT_PASSTHROUGH_EXTENSIONS
 
 logger = logging.getLogger(__name__)
 
@@ -22,7 +22,7 @@ class PageExtract:
     title: str
     markdown: str
     page_links: list[str]
-    pdf_links: list[str]
+    file_links: list[str]
 
 
 def html_to_markdown(html: str) -> str:
@@ -34,7 +34,12 @@ def html_to_markdown(html: str) -> str:
     return converter.handle(html).strip()
 
 
-def extract_page(html: bytes, page_url: str) -> PageExtract:
+def extract_page(
+    html: bytes,
+    page_url: str,
+    *,
+    passthrough_extensions: frozenset[str] = DEFAULT_PASSTHROUGH_EXTENSIONS,
+) -> PageExtract:
     soup = BeautifulSoup(html, "html.parser")
 
     for tag in soup.find_all(_SKIP_TAGS):
@@ -52,7 +57,7 @@ def extract_page(html: bytes, page_url: str) -> PageExtract:
     markdown = html_to_markdown(str(main))
 
     page_links: list[str] = []
-    pdf_links: list[str] = []
+    file_links: list[str] = []
     seen: set[str] = set()
 
     for tag in soup.find_all(["a", "link"]):
@@ -64,8 +69,8 @@ def extract_page(html: bytes, page_url: str) -> PageExtract:
             if not parsed or parsed.normalized in seen:
                 continue
             seen.add(parsed.normalized)
-            if is_pdf_url(parsed.normalized):
-                pdf_links.append(parsed.normalized)
+            if is_passthrough_url(parsed.normalized, passthrough_extensions):
+                file_links.append(parsed.normalized)
             else:
                 page_links.append(parsed.normalized)
 
@@ -73,7 +78,7 @@ def extract_page(html: bytes, page_url: str) -> PageExtract:
         title=title or page_url,
         markdown=markdown,
         page_links=sorted(page_links),
-        pdf_links=sorted(pdf_links),
+        file_links=sorted(file_links),
     )
 
 
@@ -88,7 +93,13 @@ def extract_pdf_text(data: bytes) -> str:
     return "\n\n".join(parts).strip()
 
 
-def pdf_title_from_url(url: ParsedUrl) -> str:
+def file_title_from_url(url: ParsedUrl) -> str:
     segment = url.path.rsplit("/", 1)[-1]
-    name = re.sub(r"\.pdf$", "", segment, flags=re.IGNORECASE)
+    name = segment
+    if "." in name:
+        name = name.rsplit(".", 1)[0]
     return name.replace("-", " ").replace("_", " ").strip() or url.normalized
+
+
+def pdf_title_from_url(url: ParsedUrl) -> str:
+    return file_title_from_url(url)

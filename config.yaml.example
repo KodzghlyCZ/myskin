@@ -1,0 +1,51 @@
+# myskin configuration template — copy to config.yaml and adjust.
+# Secrets (API token, RAGFlow key) live in .env only.
+
+api:
+  data_dir: ./data
+  host: 0.0.0.0
+  port: 8080
+  # Public URL — required so the catalog can expose file_url for every document.
+  public_base_url: https://myskin.example.com
+
+crawler:
+  seed_url: https://edu.gov.cz/
+  max_depth: 3
+  max_pages: 1000
+  request_delay: 2.5
+  user_agent: MyskinCrawler/1.0 (+https://github.com/KodzghlyCZ/myskin)
+  respect_robots: true
+  state_db: ./.myskin/crawl.db
+  refresh_known: true
+  resume_on_startup: true
+  sitemap_url: https://edu.gov.cz/sitemap_index.xml
+  sitemap_only: true
+  # Hybrid mode: crawl sitemap pages but also queue PDF/DOC links found on those pages
+  follow_file_links: true
+  progress: auto
+
+  # HTML pages cannot be ingested by RAGFlow directly — convert to markdown.
+  html_to_markdown: true
+
+  # Store native file formats on disk and let RAGFlow DeepDoc parse them.
+  passthrough:
+    enabled: true
+    # When false, PDFs are text-extracted with pypdf into .md (legacy behaviour).
+    extract_pdf_text: false
+    extensions:
+      - .pdf
+      - .doc
+      - .docx
+      - .xls
+      - .xlsx
+      - .ppt
+      - .pptx
+      - .csv
+
+scheduler:
+  enabled: true
+  cron: "0 2 * * 0"
+  interval_hours: null
+  interval_minutes: null
+  run_on_startup: false
+  timezone: UTC

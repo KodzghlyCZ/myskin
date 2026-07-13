@@ -58,6 +58,7 @@ class SecretSettings(BaseSettings):
     )
 
     api_token: str = ""
+    ragflow_api_key: str = ""
 
 
 @lru_cache

@@ -6,6 +6,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import urljoin, urlparse, urlunparse
 
+from myskin.formats import extension_from_url, normalize_extension
+
 _UNSAFE_PATH = re.compile(r"[^a-zA-Z0-9._-]+")
 _ROOT_INDEX_ALIASES = frozenset(
     {
@@ -60,38 +62,41 @@ def _canonical_path(path: str) -> str:
 
 
 def is_pdf_url(url: str) -> bool:
-    return _path_extension(urlparse(url).path) == ".pdf"
+    return extension_from_url(url) == ".pdf"
 
 
 def is_css_url(url: str) -> bool:
     """True when the URL path ends in .css (query string ignored)."""
-    return _path_extension(urlparse(url).path) == ".css"
+    return extension_from_url(url) == ".css"
 
 
-def _path_extension(path: str) -> str:
-    return Path(path).suffix.lower()
+def is_passthrough_url(url: str, allowed_extensions: frozenset[str]) -> bool:
+    return normalize_extension(extension_from_url(url)) in allowed_extensions
 
 
-def is_in_scope(url: ParsedUrl, seed: ParsedUrl) -> bool:
-    if url.host != seed.host:
-        return False
-    if seed.path in ("", "/"):
-        return True
-    return url.path == seed.path or url.path.startswith(seed.path.rstrip("/") + "/")
-
-
-def slugify_segment(segment: str) -> str:
-    segment = segment.strip().lower()
-    segment = _UNSAFE_PATH.sub("-", segment)
-    return segment.strip("-") or "index"
-
-
-def url_to_relative_path(url: ParsedUrl, *, resource_type: str) -> str:
-    """Map a URL to a stable path under crawl/<host>/pages|pdfs/."""
+def url_to_relative_path(
+    url: ParsedUrl,
+    *,
+    resource_type: str,
+    extension: str | None = None,
+) -> str:
+    """Map a URL to a stable path under crawl/<host>/pages|files/."""
     host_slug = slugify_segment(url.host.replace(".", "-"))
     parts = [p for p in url.path.split("/") if p]
     if not parts:
         parts = ["index"]
+
+    safe_parts = [slugify_segment(p) for p in parts]
+
+    if resource_type == "file":
+        ext = normalize_extension(extension or extension_from_url(url.normalized) or ".bin")
+        filename = safe_parts[-1]
+        if filename.lower().endswith(ext):
+            filename = filename[: -len(ext)]
+        filename = f"{filename}{ext}"
+        dir_parts = safe_parts[:-1]
+        rel = Path("crawl") / host_slug / "files" / Path(*dir_parts) / filename
+        return rel.as_posix()
 
     if resource_type == "pdf" and parts[-1].lower().endswith(".pdf"):
         stem = parts[-1][:-4]
@@ -108,6 +113,20 @@ def url_to_relative_path(url: ParsedUrl, *, resource_type: str) -> str:
         rel = Path("crawl") / host_slug / "pages" / Path(*safe_parts[:-1]) / f"{safe_parts[-1]}.md"
 
     return rel.as_posix()
+
+
+def is_in_scope(url: ParsedUrl, seed: ParsedUrl) -> bool:
+    if url.host != seed.host:
+        return False
+    if seed.path in ("", "/"):
+        return True
+    return url.path == seed.path or url.path.startswith(seed.path.rstrip("/") + "/")
+
+
+def slugify_segment(segment: str) -> str:
+    segment = segment.strip().lower()
+    segment = _UNSAFE_PATH.sub("-", segment)
+    return segment.strip("-") or "index"
 
 
 def content_hash(data: bytes) -> str:

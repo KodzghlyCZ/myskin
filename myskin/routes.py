@@ -1,16 +1,17 @@
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from fastapi.responses import HTMLResponse
+from fastapi.responses import FileResponse, HTMLResponse
 
 from myskin.auth import require_token
-from myskin.catalog import paginate, scan_documents
+from myskin.catalog import catalog_stats, paginate, resolve_document_path, scan_documents
 from myskin.config import settings
 from myskin.crawl_runner import CrawlAlreadyRunningError, crawl_runner
 from myskin.crawler.config import crawl_settings
 from myskin.crawler.live import crawl_live
 from myskin.crawler.state import CrawlState
-from myskin.dashboard import DASHBOARD_HTML
+from myskin.dashboard import load_dashboard_html, resolve_crawl_static_file
+from myskin.formats import guess_mime_type
 from myskin.models import (
     CrawlLiveEventModel,
     CrawlLiveResponse,
@@ -25,6 +26,7 @@ from myskin.models import (
 )
 from myskin.scheduler import get_next_run_at
 from myskin.scheduler_config import scheduler_settings
+from myskin.ragflow_sync import sync_documents_to_ragflow
 
 router = APIRouter()
 
@@ -77,9 +79,24 @@ def _build_live_state() -> CrawlLiveStateModel:
     )
 
 
+_CRAWL_STATIC_MEDIA = {
+    ".css": "text/css; charset=utf-8",
+    ".js": "application/javascript; charset=utf-8",
+}
+
+
 @router.get("/crawl", response_class=HTMLResponse, tags=["crawl"])
 async def crawl_dashboard() -> HTMLResponse:
-    return HTMLResponse(DASHBOARD_HTML)
+    return HTMLResponse(load_dashboard_html())
+
+
+@router.get("/crawl/static/{asset_name}", tags=["crawl"])
+async def crawl_dashboard_static(asset_name: str) -> FileResponse:
+    path = resolve_crawl_static_file(asset_name)
+    if path is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
+    media_type = _CRAWL_STATIC_MEDIA.get(path.suffix.lower(), "application/octet-stream")
+    return FileResponse(path, media_type=media_type)
 
 
 @router.get(
@@ -134,6 +151,7 @@ async def crawl_start() -> CrawlTriggerResponse:
 @router.get("/health", response_model=HealthResponse, tags=["meta"])
 async def health() -> HealthResponse:
     docs = scan_documents()
+    stats = catalog_stats(docs)
     crawl_count = None
     if crawl_settings.state_db.exists():
         crawl_count = len(CrawlState(crawl_settings.state_db).list_resources())
@@ -141,6 +159,13 @@ async def health() -> HealthResponse:
         status="ok",
         document_count=len(docs),
         data_dir=str(settings.data_dir.resolve()),
+        catalog_by_format=stats["by_format"],
+        catalog_with_file_url=stats["with_file_url"],
+        passthrough_enabled=crawl_settings.passthrough_enabled,
+        passthrough_extensions=sorted(crawl_settings.passthrough_extensions),
+        sitemap_only=crawl_settings.sitemap_only,
+        follow_file_links=crawl_settings.follow_file_links,
+        public_base_url=settings.public_base_url or None,
         crawl_resources=crawl_count,
         scheduler_enabled=scheduler_settings.enabled,
         crawl_running=crawl_runner.running,
@@ -236,3 +261,39 @@ async def get_document(doc_id: str) -> DocumentItem:
         if doc.id == doc_id:
             return doc
     raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found")
+
+
+@router.get(
+    "/api/files/{doc_id}",
+    tags=["documents"],
+    dependencies=[Depends(require_token)],
+)
+async def download_file(doc_id: str) -> FileResponse:
+    path = resolve_document_path(doc_id)
+    if path is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File not found")
+    return FileResponse(
+        path,
+        media_type=guess_mime_type(path),
+        filename=path.name,
+    )
+
+
+@router.post(
+    "/api/ragflow/sync",
+    tags=["ragflow"],
+    dependencies=[Depends(require_token)],
+)
+async def ragflow_sync() -> dict[str, int]:
+    try:
+        return sync_documents_to_ragflow()
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        ) from exc
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(exc),
+        ) from exc
