@@ -1,4 +1,5 @@
-# Docker overlay — merged when MYSKIN_CONFIG_FILES=config.yaml,config.docker.yaml
+# Docker path overrides — mounted at runtime with instance config (see docker-compose.yml).
+# Production instances bind only config.yaml; local compose layers this file on top.
 api:
   data_dir: /app/data
 

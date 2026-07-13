@@ -10,7 +10,8 @@ Self-hosted service that **crawls** web pages and linked documents, stores them 
 ## Quick start (Docker)
 
 ```bash
-cp .env.example .env          # set MYSKIN_API_TOKEN, tune crawler/scheduler
+cp .env.example .env
+cp config.yaml.example config.yaml   # instance config — not baked into the image
 docker compose up -d --build
 ```
 

@@ -1,5 +1,5 @@
-# myskin configuration template — copy to config.yaml and adjust.
-# Secrets (API token, RAGFlow key) live in .env only.
+# myskin configuration template — copy to config.yaml per instance (not in the Docker image).
+# Production: bind-mount as /app/config.yaml (see infra-files/myskin instances).
 
 api:
   data_dir: ./data

@@ -8,10 +8,12 @@ services:
     env_file:
       - .env
     environment:
-      MYSKIN_CONFIG_FILES: config.yaml,config.docker.yaml
+      MYSKIN_CONFIG_FILES: /app/config.yaml,/app/config.docker.yaml
     volumes:
       - myskin-data:/app/data
       - myskin-state:/app/.myskin
+      - ./config.yaml:/app/config.yaml:ro
+      - ./config.docker.yaml:/app/config.docker.yaml:ro
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8080/health"]

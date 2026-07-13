@@ -9,13 +9,11 @@ RUN apt-get update \
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY config.yaml config.docker.yaml ./
 COPY myskin ./myskin
 
 RUN mkdir -p /app/data /app/.myskin
 
-ENV MYSKIN_CONFIG_FILES=config.yaml,config.docker.yaml \
-    PYTHONUNBUFFERED=1
+ENV PYTHONUNBUFFERED=1
 
 EXPOSE 8080
 
