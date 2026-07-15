@@ -107,19 +107,13 @@ class RagflowClient:
         client: httpx.Client,
         *,
         document_id: str,
-        name: str | None = None,
         meta_fields: dict[str, Any] | None = None,
     ) -> None:
-        body: dict[str, Any] = {}
-        if name:
-            body["name"] = name
-        if meta_fields:
-            body["meta_fields"] = meta_fields
-        if not body:
+        if not meta_fields:
             return
         response = client.put(
             self._dataset_url(f"documents/{document_id}"),
-            json=body,
+            json={"meta_fields": meta_fields},
         )
         self._unwrap(response)
 
@@ -238,7 +232,6 @@ def sync_documents_to_ragflow(
                         client_api.update_document(
                             client,
                             document_id=record.ragflow_document_id,
-                            name=doc.title or doc.filename,
                             meta_fields=_ragflow_meta_fields(doc),
                         )
                     except Exception as exc:
@@ -275,7 +268,6 @@ def sync_documents_to_ragflow(
                 client_api.update_document(
                     client,
                     document_id=ragflow_doc_id,
-                    name=doc.title or filename,
                     meta_fields=_ragflow_meta_fields(doc),
                 )
             except Exception as exc:
