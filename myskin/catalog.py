@@ -30,6 +30,7 @@ class RawDocument:
     format: str
     filename: str
     mime_type: str
+    source_url: str | None = None
 
     @property
     def id(self) -> str:
@@ -88,6 +89,7 @@ def _read_text_document(path: Path, root: Path) -> RawDocument | None:
         format=meta.get("format") or format_label(ext),
         filename=path.name,
         mime_type="text/markdown" if ext in TEXT_CATALOG_SUFFIXES else "text/plain",
+        source_url=meta.get("source_url") or None,
     )
 
 
@@ -107,6 +109,7 @@ def _read_binary_document(path: Path, root: Path) -> RawDocument | None:
         format=meta.get("format") or format_label(ext),
         filename=path.name,
         mime_type=guess_mime_type(path),
+        source_url=meta.get("source_url") or None,
     )
 
 
@@ -129,6 +132,29 @@ def resolve_document_path(doc_id: str, data_dir: Path | None = None) -> Path | N
         return None
     if path.is_file() and path.suffix.lower() in CATALOG_SUFFIXES:
         return path
+
+    # Fallback for ambiguous ids:
+    #
+    # `doc_id` is derived from `relative_path` by replacing "/" with "--".
+    # Unfortunately, some filenames can also contain "--" (or "---"), so decoding
+    # can produce a wrong path. When that happens, search the data dir for a file
+    # whose computed id matches `doc_id`.
+    try:
+        for candidate in root.rglob("*"):
+            if not candidate.is_file():
+                continue
+            if candidate.name.startswith("."):
+                continue
+            if candidate.name.endswith(_META_SUFFIX):
+                continue
+            if candidate.suffix.lower() not in CATALOG_SUFFIXES:
+                continue
+            rel = candidate.relative_to(root).as_posix()
+            if rel.replace("/", "--").replace(" ", "-") == doc_id:
+                return candidate
+    except OSError:
+        return None
+
     return None
 
 
@@ -172,6 +198,7 @@ def scan_documents(data_dir: Path | None = None) -> list[DocumentItem]:
             format=d.format,
             filename=d.filename,
             mime_type=d.mime_type,
+            source_url=d.source_url,
             file_url=file_url_for(d.id),
         )
         for d in docs

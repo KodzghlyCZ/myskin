@@ -114,7 +114,7 @@ RAGFlow polls `GET /api/documents`. The connector coerces all content to `.txt` 
 
 ### Push: RAGFlow dataset API (recommended for binaries)
 
-Enable `ragflow:` in config. After each crawl, myskin uploads **only changed** files via `POST /api/v1/datasets/{id}/documents`, tracks `myskin_id → ragflow_document_id` in `ragflow.state_db`, deletes removed docs, and triggers parsing.
+Enable `ragflow:` in config. After each crawl, myskin uploads **only changed** files via `POST /api/v1/datasets/{id}/documents`, then sets **`meta_fields`** (`url`, `source_url`, `file_url`, `title`, …) via `PUT …/documents/{id}`. Unchanged files still get a metadata refresh on each sync. Tracks `myskin_id → ragflow_document_id` in `ragflow.state_db`, deletes removed docs, and triggers parsing.
 
 ```yaml
 ragflow:

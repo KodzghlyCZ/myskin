@@ -102,6 +102,27 @@ class RagflowClient:
             raise RagflowApiError("RAGFlow upload response missing document id")
         return str(doc_id)
 
+    def update_document(
+        self,
+        client: httpx.Client,
+        *,
+        document_id: str,
+        name: str | None = None,
+        meta_fields: dict[str, Any] | None = None,
+    ) -> None:
+        body: dict[str, Any] = {}
+        if name:
+            body["name"] = name
+        if meta_fields:
+            body["meta_fields"] = meta_fields
+        if not body:
+            return
+        response = client.put(
+            self._dataset_url(f"documents/{document_id}"),
+            json=body,
+        )
+        self._unwrap(response)
+
     def delete_documents(self, client: httpx.Client, document_ids: list[str]) -> None:
         if not document_ids:
             return
@@ -144,6 +165,24 @@ def _needs_sync(doc: DocumentItem, path: Path, record: RagflowSyncRecord | None)
     if record.updated_at != doc_updated:
         return True, digest
     return False, digest
+
+
+def _ragflow_meta_fields(doc: DocumentItem) -> dict[str, str]:
+    """Fields RAGFlow forwards to Dify as doc_metadata when retrieval includes metadata."""
+    fields: dict[str, str] = {
+        "myskin_id": doc.id,
+        "title": doc.title,
+        "author": doc.author,
+        "category": doc.category,
+        "format": doc.format,
+    }
+    if doc.source_url:
+        # RAGFlow chat cites `url` in reference chunks — primary link for Spliffy/Dify.
+        fields["url"] = doc.source_url
+        fields["source_url"] = doc.source_url
+    if doc.file_url:
+        fields["file_url"] = doc.file_url
+    return fields
 
 
 def sync_documents_to_ragflow(
@@ -194,6 +233,20 @@ def sync_documents_to_ragflow(
             record = known.get(doc.id)
             changed, digest = _needs_sync(doc, path, record)
             if not changed:
+                if record is not None:
+                    try:
+                        client_api.update_document(
+                            client,
+                            document_id=record.ragflow_document_id,
+                            name=doc.title or doc.filename,
+                            meta_fields=_ragflow_meta_fields(doc),
+                        )
+                    except Exception as exc:
+                        logger.warning(
+                            "RAGFlow sync: metadata refresh failed for %s: %s",
+                            doc.id,
+                            exc,
+                        )
                 result.skipped += 1
                 continue
 
@@ -218,6 +271,12 @@ def sync_documents_to_ragflow(
                     path=path,
                     filename=filename,
                     mime_type=doc.mime_type,
+                )
+                client_api.update_document(
+                    client,
+                    document_id=ragflow_doc_id,
+                    name=doc.title or filename,
+                    meta_fields=_ragflow_meta_fields(doc),
                 )
             except Exception as exc:
                 result.failed += 1

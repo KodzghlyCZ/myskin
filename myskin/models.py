@@ -12,6 +12,10 @@ class DocumentItem(BaseModel):
     format: str = Field(default="md", description="File format (md, pdf, docx, …)")
     filename: str = Field(default="", description="On-disk filename with extension")
     mime_type: str = Field(default="application/octet-stream")
+    source_url: str | None = Field(
+        default=None,
+        description="Original crawled URL (for RAG citations)",
+    )
     file_url: str | None = Field(
         default=None,
         description="Download URL for the file (requires api.public_base_url)",
