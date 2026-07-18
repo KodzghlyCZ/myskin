@@ -5,7 +5,7 @@ from pathlib import Path
 
 from myskin.config import settings as app_settings
 from myskin.formats import DEFAULT_PASSTHROUGH_EXTENSIONS, normalize_extension
-from myskin.settings_loader import cfg_bool, cfg_get, cfg_path, ensure_config_loaded
+from myskin.settings_loader import cfg_bool, cfg_get, cfg_optional, cfg_path, ensure_config_loaded
 
 
 class CrawlSettings:
@@ -26,11 +26,11 @@ class CrawlSettings:
         self.refresh_known: bool = cfg_bool("crawler.refresh_known", True)
         self.resume_on_startup: bool = cfg_bool("crawler.resume_on_startup", True)
         self.progress: str = str(cfg_get("crawler.progress", default="auto")).strip().lower()
-        sitemap_url = cfg_get("crawler.sitemap_url", default=None)
+        sitemap_url = cfg_optional("crawler.sitemap_url")
         self.sitemap_url: str | None = (
             str(sitemap_url).strip() if sitemap_url else None
         ) or None
-        local_sitemap = cfg_get("crawler.local_sitemap", default=None)
+        local_sitemap = cfg_optional("crawler.local_sitemap")
         self.local_sitemap_path: Path | None = (
             Path(str(local_sitemap).strip()) if local_sitemap else None
         )
@@ -45,7 +45,7 @@ class CrawlSettings:
 
     @staticmethod
     def _load_passthrough_extensions() -> frozenset[str]:
-        raw = cfg_get("crawler.passthrough.extensions", default=None)
+        raw = cfg_optional("crawler.passthrough.extensions")
         if raw is None:
             return DEFAULT_PASSTHROUGH_EXTENSIONS
         if isinstance(raw, str):

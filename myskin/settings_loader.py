@@ -66,6 +66,17 @@ def secrets() -> SecretSettings:
     return SecretSettings()
 
 
+def cfg_optional(path: str):
+    """Return a config value when the key exists; None when absent or empty."""
+    ensure_config_loaded()
+    if not contains(path):
+        return None
+    value = get(path, default=None)
+    if value is None or value == "":
+        return None
+    return value
+
+
 def cfg_get(path: str, default=None, *, required: bool = False):
     ensure_config_loaded()
     return get(path, default=default, required=required)
