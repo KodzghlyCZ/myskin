@@ -4,6 +4,7 @@ import logging
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from pathlib import Path
 
 from myskin.crawler.fetch import Fetcher
 from myskin.crawler.urls import ParsedUrl, is_in_scope, normalize_url
@@ -70,6 +71,23 @@ def _child_text(parent: ET.Element, name: str) -> str | None:
         if _local_name(child.tag) == name and child.text:
             return child.text
     return None
+
+
+def load_local_sitemap_file(path: Path) -> list[SitemapEntry]:
+    """Load a sitemap urlset from a local XML file (no HTTP fetch, no host scope filter)."""
+    content = path.read_bytes()
+    entries, children = parse_sitemap_xml(content)
+    if children:
+        logger.warning(
+            "Local sitemap %s is a sitemap index; only inline urlsets are supported",
+            path,
+        )
+    merged: dict[str, datetime | None] = {}
+    for entry in entries:
+        existing = merged.get(entry.url)
+        if existing is None or _is_newer(entry.lastmod, existing):
+            merged[entry.url] = entry.lastmod
+    return [SitemapEntry(url=url, lastmod=lastmod) for url, lastmod in sorted(merged.items())]
 
 
 def load_sitemap_entries(

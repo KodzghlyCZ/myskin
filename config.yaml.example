@@ -19,6 +19,9 @@ crawler:
   refresh_known: true
   resume_on_startup: true
   sitemap_url: https://edu.gov.cz/sitemap_index.xml
+  # Or bind-mount a local urlset and set local_sitemap (see sofie-laws instance):
+  # local_sitemap: /app/sitemap/sitemap.xml
+  # local_sitemap_requeue: always   # re-crawl all URLs when sitemap has no <lastmod>
   sitemap_only: true
   # Hybrid mode: crawl sitemap pages but also queue PDF/DOC links found on those pages
   follow_file_links: true

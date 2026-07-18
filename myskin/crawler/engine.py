@@ -26,7 +26,7 @@ from myskin.crawler.urls import (
     url_to_relative_path,
 )
 from myskin.crawler.progress import CrawlProgressDisplay
-from myskin.crawler.sitemap import SitemapEntry, load_sitemap_entries
+from myskin.crawler.sitemap import SitemapEntry, load_local_sitemap_file, load_sitemap_entries
 from myskin.crawler.writer import parse_http_date, remove_file, write_binary, write_markdown
 from myskin.formats import (
     extension_from_content_type,
@@ -151,7 +151,7 @@ class CrawlEngine:
                         discovered = self._process_page(
                             parsed, seed, item.depth, fetcher, stats, frontier
                         )
-                        if not self.settings.sitemap_url:
+                        if not self.settings.sitemap_url and not self.settings.local_sitemap_path:
                             stats.discovered += discovered
 
                     if self.progress:
@@ -172,6 +172,30 @@ class CrawlEngine:
         self, seed: ParsedUrl, fetcher: Fetcher
     ) -> tuple[deque[QueuedUrl], _CrawlFrontier, SitemapQueueInfo | None]:
         frontier = _CrawlFrontier()
+
+        if self.settings.local_sitemap_path:
+            entries = load_local_sitemap_file(self.settings.local_sitemap_path)
+            queued, skipped = self._enqueue_sitemap_entries(
+                frontier, seed, entries, requeue_always=self.settings.local_sitemap_requeue_always
+            )
+            info = SitemapQueueInfo(total=len(entries), queued=queued, skipped=skipped)
+            logger.info(
+                "Local sitemap %s: %d URLs, %d queued, %d skipped",
+                self.settings.local_sitemap_path,
+                info.total,
+                info.queued,
+                info.skipped,
+            )
+            if entries and queued == 0:
+                return frontier.queue, frontier, info
+            if not entries:
+                logger.warning(
+                    "No URLs in local sitemap %s, falling back to link crawl",
+                    self.settings.local_sitemap_path,
+                )
+                self._enqueue_link_crawl(frontier, seed)
+                return frontier.queue, frontier, None
+            return frontier.queue, frontier, info
 
         if self.settings.sitemap_url:
             entries = load_sitemap_entries(fetcher, self.settings.sitemap_url, seed)
@@ -203,6 +227,8 @@ class CrawlEngine:
         frontier: _CrawlFrontier,
         seed: ParsedUrl,
         entries: list[SitemapEntry],
+        *,
+        requeue_always: bool = False,
     ) -> tuple[int, int]:
         queued = 0
         skipped = 0
@@ -212,7 +238,9 @@ class CrawlEngine:
                 continue
             if is_css_url(parsed.normalized):
                 continue
-            if not self._needs_sitemap_crawl(parsed.normalized, entry.lastmod):
+            if not self._needs_sitemap_crawl(
+                parsed.normalized, entry.lastmod, requeue_always=requeue_always
+            ):
                 skipped += 1
                 continue
             rtype = "file" if self._is_file_resource(parsed) else "page"
@@ -220,7 +248,15 @@ class CrawlEngine:
                 queued += 1
         return queued, skipped
 
-    def _needs_sitemap_crawl(self, url: str, sitemap_lastmod: datetime | None) -> bool:
+    def _needs_sitemap_crawl(
+        self,
+        url: str,
+        sitemap_lastmod: datetime | None,
+        *,
+        requeue_always: bool = False,
+    ) -> bool:
+        if requeue_always:
+            return True
         existing = self.state.get_resource(url)
         if existing is None:
             return True

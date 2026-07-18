@@ -30,6 +30,12 @@ class CrawlSettings:
         self.sitemap_url: str | None = (
             str(sitemap_url).strip() if sitemap_url else None
         ) or None
+        local_sitemap = cfg_get("crawler.local_sitemap", default=None)
+        self.local_sitemap_path: Path | None = (
+            Path(str(local_sitemap).strip()) if local_sitemap else None
+        )
+        requeue = str(cfg_get("crawler.local_sitemap_requeue", default="always")).strip().lower()
+        self.local_sitemap_requeue_always: bool = requeue in {"always", "all", "true", "yes", "1"}
         self.sitemap_only: bool = cfg_bool("crawler.sitemap_only", True)
         self.follow_file_links: bool = cfg_bool("crawler.follow_file_links", True)
         self.html_to_markdown: bool = cfg_bool("crawler.html_to_markdown", True)
