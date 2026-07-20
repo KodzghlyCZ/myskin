@@ -7,8 +7,8 @@ from fastapi import FastAPI
 from myskin import __version__
 from myskin.crawl_recovery import mark_interrupted_runs, recover_interrupted_crawl_on_startup
 from myskin.routes import router
-from myskin.scheduler import run_scheduled_crawl, start_scheduler, stop_scheduler
-from myskin.scheduler_config import scheduler_settings
+from myskin.scheduler import run_startup_crawls, start_scheduler, stop_scheduler
+from myskin.sites.service import site_service
 
 logger = logging.getLogger(__name__)
 
@@ -19,10 +19,15 @@ async def lifespan(app: FastAPI):
         level=logging.INFO,
         format="%(asctime)s %(levelname)s %(name)s %(message)s",
     )
+    site_service.bootstrap()
     start_scheduler()
-    if scheduler_settings.run_on_startup:
+    startup_scheduled = any(
+        site_service.scheduler_settings_for(site).run_on_startup
+        for site in site_service.list_sites(enabled_only=True)
+    )
+    if startup_scheduled:
         mark_interrupted_runs()
-        asyncio.create_task(run_scheduled_crawl())
+        asyncio.create_task(run_startup_crawls())
     else:
         asyncio.create_task(recover_interrupted_crawl_on_startup())
     yield
@@ -31,7 +36,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="myskin",
-    description="RAGFlow REST API data source — crawl, store, and serve documents",
+    description="Multi-site web crawler with RAGFlow dataset push sync",
     version=__version__,
     lifespan=lifespan,
 )

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -113,11 +114,11 @@ def _read_binary_document(path: Path, root: Path) -> RawDocument | None:
     )
 
 
-def file_url_for(doc_id: str) -> str | None:
-    base_url = settings.public_base_url.rstrip("/") if settings.public_base_url else ""
-    if not base_url:
+def file_url_for(doc_id: str, *, base_url: str | None = None) -> str | None:
+    base = (base_url or settings.public_base_url).rstrip("/")
+    if not base:
         return None
-    return f"{base_url}/api/files/{doc_id}"
+    return f"{base}/api/files/{doc_id}"
 
 
 def resolve_document_path(doc_id: str, data_dir: Path | None = None) -> Path | None:
@@ -133,12 +134,6 @@ def resolve_document_path(doc_id: str, data_dir: Path | None = None) -> Path | N
     if path.is_file() and path.suffix.lower() in CATALOG_SUFFIXES:
         return path
 
-    # Fallback for ambiguous ids:
-    #
-    # `doc_id` is derived from `relative_path` by replacing "/" with "--".
-    # Unfortunately, some filenames can also contain "--" (or "---"), so decoding
-    # can produce a wrong path. When that happens, search the data dir for a file
-    # whose computed id matches `doc_id`.
     try:
         for candidate in root.rglob("*"):
             if not candidate.is_file():
@@ -158,8 +153,12 @@ def resolve_document_path(doc_id: str, data_dir: Path | None = None) -> Path | N
     return None
 
 
-def scan_documents(data_dir: Path | None = None) -> list[DocumentItem]:
-    """Walk the data directory and build the catalog (metadata + file URLs)."""
+def scan_documents(
+    data_dir: Path | None = None,
+    *,
+    file_url_builder: Callable[[str], str | None] | None = None,
+) -> list[DocumentItem]:
+    """Walk the data directory and build document metadata for RAGFlow sync."""
     root = (data_dir or settings.data_dir).resolve()
     if not root.is_dir():
         return []
@@ -188,6 +187,12 @@ def scan_documents(data_dir: Path | None = None) -> list[DocumentItem]:
             docs.append(raw)
 
     docs.sort(key=lambda d: d.id)
+
+    def _file_url(doc_id: str) -> str | None:
+        if file_url_builder is not None:
+            return file_url_builder(doc_id)
+        return file_url_for(doc_id)
+
     return [
         DocumentItem(
             id=d.id,
@@ -199,7 +204,7 @@ def scan_documents(data_dir: Path | None = None) -> list[DocumentItem]:
             filename=d.filename,
             mime_type=d.mime_type,
             source_url=d.source_url,
-            file_url=file_url_for(d.id),
+            file_url=_file_url(d.id),
         )
         for d in docs
     ]

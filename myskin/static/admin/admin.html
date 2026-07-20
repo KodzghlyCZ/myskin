@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>myskin admin</title>
+  <link rel="stylesheet" href="/admin/static/admin.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <img src="/static/brand/myskin-logo.png" alt="myskin" class="logo" />
+      <div>
+        <h1>myskin admin</h1>
+        <p class="subtitle">Multi-site crawler → RAGFlow push sync</p>
+      </div>
+    </div>
+    <div class="auth">
+      <label for="token">API token</label>
+      <input id="token" type="password" placeholder="Bearer token" autocomplete="off" />
+      <button id="save-token" type="button">Save</button>
+    </div>
+  </header>
+
+  <main>
+    <section class="toolbar">
+      <button id="refresh" type="button">Refresh</button>
+      <a class="link" href="/crawl">Crawl dashboard</a>
+      <a class="link" href="/docs">API docs</a>
+    </section>
+
+    <section id="status" class="status" hidden></section>
+
+    <section class="sites">
+      <h2>Sites</h2>
+      <div id="sites" class="site-grid"></div>
+    </section>
+
+    <section class="create">
+      <h2>Add site</h2>
+      <form id="create-form" class="create-form">
+        <label>Site ID <input name="site_id" required pattern="[a-z0-9][a-z0-9-]*" /></label>
+        <label>Name <input name="name" required /></label>
+        <label>Seed URL <input name="seed_url" type="url" required /></label>
+        <label>Public base URL <input name="public_base_url" type="url" /></label>
+        <label>RAGFlow dataset ID <input name="dataset_id" /></label>
+        <button type="submit">Create site</button>
+      </form>
+    </section>
+  </main>
+
+  <script src="/admin/static/admin.js"></script>
+</body>
+</html>

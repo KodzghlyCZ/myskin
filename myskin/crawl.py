@@ -9,13 +9,15 @@ import sys
 from myskin.crawl_runner import CrawlAlreadyRunningError, crawl_runner
 from myskin.crawler.config import CrawlSettings
 from myskin.crawler.progress import CrawlProgressDisplay
+from myskin.sites.service import site_service
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description="Crawl pages and PDFs into the myskin data directory for RAGFlow.",
     )
-    parser.add_argument("--seed", help="Seed URL (default: crawler.seed_url in config.yaml)")
+    parser.add_argument("--site", help="Site id (default: first configured site)")
+    parser.add_argument("--seed", help="Seed URL override")
     parser.add_argument("--max-depth", type=int, help="Max link depth from seed")
     parser.add_argument("--max-pages", type=int, help="Max resources to fetch per run")
     parser.add_argument("--delay", type=float, help="Seconds between HTTP requests")
@@ -39,33 +41,45 @@ def main(argv: list[str] | None = None) -> int:
         format="%(asctime)s %(levelname)s %(message)s",
     )
 
-    overrides: dict = {}
-    if args.seed:
-        overrides["seed_url"] = args.seed
-    if args.max_depth is not None:
-        overrides["max_depth"] = args.max_depth
-    if args.max_pages is not None:
-        overrides["max_pages"] = args.max_pages
-    if args.delay is not None:
-        overrides["request_delay"] = args.delay
-    if args.no_refresh_known:
-        overrides["refresh_known"] = False
+    site_service.bootstrap()
+    site = (
+        site_service.require_site(args.site)
+        if args.site
+        else site_service.default_site()
+    )
+    if site is None:
+        print("Error: no sites configured", file=sys.stderr)
+        return 2
 
-    settings = CrawlSettings()
-    for key, value in overrides.items():
-        setattr(settings, key, value)
+    mapping = dict(site.crawler)
+    if args.seed:
+        mapping["seed_url"] = args.seed
+    if args.max_depth is not None:
+        mapping["max_depth"] = args.max_depth
+    if args.max_pages is not None:
+        mapping["max_pages"] = args.max_pages
+    if args.delay is not None:
+        mapping["request_delay"] = args.delay
+    if args.no_refresh_known:
+        mapping["refresh_known"] = False
+
+    settings = CrawlSettings.from_mapping(
+        mapping,
+        data_dir=site_service.data_dir_for(site),
+        state_db=site_service.state_db_for(site),
+    )
     progress = CrawlProgressDisplay(
         mode="off" if args.no_progress else ("tty" if sys.stderr.isatty() else "log")
     )
     try:
-        result = crawl_runner.run(settings, trigger="cli", progress=progress)
+        result = crawl_runner.run(site, settings, trigger="cli", progress=progress)
     except CrawlAlreadyRunningError as exc:
         print(f"Error: {exc}", file=sys.stderr)
         return 2
     s = result.stats
 
     print(
-        f"Crawl run #{result.run_id} complete: "
+        f"Crawl run #{result.run_id} complete for site={site.site_id}: "
         f"pages={s.pages_fetched} (updated={s.pages_updated}, unchanged={s.pages_unchanged}, failed={s.pages_failed}), "
         f"pdfs={s.pdfs_fetched} (updated={s.pdfs_updated}, unchanged={s.pdfs_unchanged}, failed={s.pdfs_failed}), "
         f"discovered={s.discovered}"

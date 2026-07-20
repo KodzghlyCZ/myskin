@@ -42,6 +42,7 @@ class HealthResponse(BaseModel):
     crawl_resources: int | None = None
     scheduler_enabled: bool | None = None
     crawl_running: bool | None = None
+    site_count: int | None = None
 
 
 class CrawlStatsModel(BaseModel):
@@ -125,3 +126,57 @@ class CrawlLiveResponse(BaseModel):
     next_run_at: datetime | None = None
     last_finished_at: datetime | None = None
     last_error: str | None = None
+    site_id: str | None = None
+
+
+class SiteSummaryModel(BaseModel):
+    site_id: str
+    name: str
+    enabled: bool
+    seed_url: str
+    public_base_url: str
+    document_count: int = 0
+    crawl_running: bool = False
+    scheduler_enabled: bool = False
+    schedule: str = "disabled"
+    next_run_at: datetime | None = None
+    ragflow_enabled: bool = False
+    ragflow_dataset_id: str = ""
+    last_crawl_finished_at: datetime | None = None
+    last_crawl_error: str | None = None
+
+
+class SiteListResponse(BaseModel):
+    items: list[SiteSummaryModel]
+    total: int
+
+
+class SiteCreateRequest(BaseModel):
+    site_id: str = Field(min_length=1, max_length=64, pattern=r"^[a-z0-9][a-z0-9-]*$")
+    name: str = Field(min_length=1, max_length=200)
+    enabled: bool = True
+    public_base_url: str = ""
+    crawler: dict = Field(default_factory=dict)
+    scheduler: dict = Field(default_factory=dict)
+    ragflow: dict = Field(default_factory=dict)
+
+
+class SiteUpdateRequest(BaseModel):
+    name: str | None = None
+    enabled: bool | None = None
+    public_base_url: str | None = None
+    crawler: dict | None = None
+    scheduler: dict | None = None
+    ragflow: dict | None = None
+
+
+class SiteDetailResponse(BaseModel):
+    site_id: str
+    name: str
+    enabled: bool
+    public_base_url: str
+    crawler: dict
+    scheduler: dict
+    ragflow: dict
+    created_at: datetime | None = None
+    updated_at: datetime | None = None

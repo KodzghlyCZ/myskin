@@ -20,6 +20,23 @@ class RagflowApiError(RuntimeError):
     pass
 
 
+def _mapping_bool(data: dict[str, Any], key: str, default: bool) -> bool:
+    if key not in data:
+        return default
+    value = data[key]
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return value.strip().lower() in {"true", "1", "yes", "on"}
+    return bool(value)
+
+
+def _mapping_get(data: dict[str, Any], key: str, default: Any = None) -> Any:
+    if key not in data or data[key] is None or data[key] == "":
+        return default
+    return data[key]
+
+
 @dataclass(frozen=True)
 class RagflowSettings:
     enabled: bool
@@ -29,22 +46,52 @@ class RagflowSettings:
     sync_on_crawl_complete: bool
     parse_on_upload: bool
     delete_missing: bool
+    site_id: str | None = None
+
+    @classmethod
+    def from_mapping(
+        cls,
+        data: dict[str, Any],
+        *,
+        state_db: Path | None = None,
+        site_id: str | None = None,
+    ) -> RagflowSettings:
+        resolved_state_db = state_db
+        if resolved_state_db is None:
+            override = _mapping_get(data, "state_db")
+            resolved_state_db = (
+                Path(str(override)) if override else Path("./.myskin/ragflow_sync.db")
+            )
+        return cls(
+            enabled=_mapping_bool(data, "enabled", False),
+            api_url=str(_mapping_get(data, "api_url", default="")).strip().rstrip("/"),
+            dataset_id=str(_mapping_get(data, "dataset_id", default="")).strip(),
+            state_db=resolved_state_db,
+            sync_on_crawl_complete=_mapping_bool(data, "sync_on_crawl_complete", True),
+            parse_on_upload=_mapping_bool(data, "parse_on_upload", True),
+            delete_missing=_mapping_bool(data, "delete_missing", True),
+            site_id=site_id,
+        )
 
     @classmethod
     def load(cls) -> RagflowSettings:
         ensure_config_loaded()
-        api_url = str(cfg_get("ragflow.api_url", default="")).strip().rstrip("/")
-        dataset_id = str(cfg_get("ragflow.dataset_id", default="")).strip()
-        state_db_raw = str(cfg_get("ragflow.state_db", default="./.myskin/ragflow_sync.db")).strip()
-        return cls(
-            enabled=cfg_bool("ragflow.enabled", False),
-            api_url=api_url,
-            dataset_id=dataset_id,
-            state_db=Path(state_db_raw),
-            sync_on_crawl_complete=cfg_bool("ragflow.sync_on_crawl_complete", True),
-            parse_on_upload=cfg_bool("ragflow.parse_on_upload", True),
-            delete_missing=cfg_bool("ragflow.delete_missing", True),
-        )
+        mapping: dict[str, Any] = {}
+        for key in (
+            "enabled",
+            "api_url",
+            "dataset_id",
+            "state_db",
+            "sync_on_crawl_complete",
+            "parse_on_upload",
+            "delete_missing",
+        ):
+            value = cfg_get(f"ragflow.{key}", default=None)
+            if value is not None and value != "":
+                mapping[key] = value
+        if "enabled" not in mapping:
+            mapping["enabled"] = cfg_bool("ragflow.enabled", False)
+        return cls.from_mapping(mapping)
 
     @property
     def api_key(self) -> str:
@@ -161,7 +208,7 @@ def _needs_sync(doc: DocumentItem, path: Path, record: RagflowSyncRecord | None)
     return False, digest
 
 
-def _ragflow_meta_fields(doc: DocumentItem) -> dict[str, str]:
+def _ragflow_meta_fields(doc: DocumentItem, *, site_id: str | None = None) -> dict[str, str]:
     """Fields RAGFlow forwards to Dify as doc_metadata when retrieval includes metadata."""
     fields: dict[str, str] = {
         "myskin_id": doc.id,
@@ -170,6 +217,8 @@ def _ragflow_meta_fields(doc: DocumentItem) -> dict[str, str]:
         "category": doc.category,
         "format": doc.format,
     }
+    if site_id:
+        fields["site_id"] = site_id
     if doc.source_url:
         # RAGFlow chat cites `url` in reference chunks — primary link for Spliffy/Dify.
         fields["url"] = doc.source_url
@@ -183,6 +232,7 @@ def sync_documents_to_ragflow(
     *,
     documents: list[DocumentItem] | None = None,
     ragflow: RagflowSettings | None = None,
+    data_dir: Path | None = None,
 ) -> dict[str, int]:
     """Incrementally push catalog files to RAGFlow with native extensions."""
     settings = ragflow or RagflowSettings.load()
@@ -193,7 +243,7 @@ def sync_documents_to_ragflow(
     if not settings.api_key:
         raise ValueError("MYSKIN_RAGFLOW_API_KEY is required when ragflow.enabled=true")
 
-    items = documents if documents is not None else scan_documents()
+    items = documents if documents is not None else scan_documents(data_dir=data_dir)
     state = RagflowSyncState(settings.state_db)
     known = state.list_records()
     catalog_ids = {doc.id for doc in items}
@@ -218,7 +268,7 @@ def sync_documents_to_ragflow(
                     logger.warning("RAGFlow sync: failed to delete %s: %s", myskin_id, exc)
 
         for doc in items:
-            path = resolve_document_path(doc.id)
+            path = resolve_document_path(doc.id, data_dir=data_dir)
             if path is None or not path.is_file():
                 result.failed += 1
                 logger.warning("RAGFlow sync: missing file for %s", doc.id)
@@ -232,7 +282,9 @@ def sync_documents_to_ragflow(
                         client_api.update_document(
                             client,
                             document_id=record.ragflow_document_id,
-                            meta_fields=_ragflow_meta_fields(doc),
+                            meta_fields=_ragflow_meta_fields(
+                                doc, site_id=settings.site_id
+                            ),
                         )
                     except Exception as exc:
                         logger.warning(
@@ -268,7 +320,7 @@ def sync_documents_to_ragflow(
                 client_api.update_document(
                     client,
                     document_id=ragflow_doc_id,
-                    meta_fields=_ragflow_meta_fields(doc),
+                    meta_fields=_ragflow_meta_fields(doc, site_id=settings.site_id),
                 )
             except Exception as exc:
                 result.failed += 1
@@ -327,11 +379,41 @@ def sync_documents_to_ragflow(
     return result.as_dict()
 
 
-def maybe_sync_after_crawl() -> None:
-    settings = RagflowSettings.load()
+def maybe_sync_after_crawl(
+    *,
+    site_id: str | None = None,
+    ragflow: RagflowSettings | None = None,
+    data_dir: Path | None = None,
+    documents: list[DocumentItem] | None = None,
+) -> None:
+    settings = ragflow or RagflowSettings.load()
     if not settings.enabled or not settings.sync_on_crawl_complete:
         return
     try:
-        sync_documents_to_ragflow(ragflow=settings)
+        sync_documents_to_ragflow(
+            ragflow=settings,
+            data_dir=data_dir,
+            documents=documents,
+        )
     except Exception:
-        logger.exception("RAGFlow post-crawl sync failed")
+        logger.exception(
+            "RAGFlow post-crawl sync failed for site %s",
+            site_id or settings.site_id or "default",
+        )
+
+
+def sync_site_to_ragflow(site_id: str) -> dict[str, int]:
+    from myskin.sites.service import site_service
+
+    site = site_service.require_site(site_id)
+    ragflow = site_service.ragflow_settings_for(site)
+    data_dir = site_service.data_dir_for(site)
+    documents = scan_documents(
+        data_dir=data_dir,
+        file_url_builder=lambda doc_id: site_service.file_url_for(site, doc_id),
+    )
+    return sync_documents_to_ragflow(
+        documents=documents,
+        ragflow=ragflow,
+        data_dir=data_dir,
+    )

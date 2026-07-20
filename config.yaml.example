@@ -1,65 +1,85 @@
-# myskin configuration template — copy to config.yaml per instance (not in the Docker image).
-# Production: bind-mount as /app/config.yaml (see infra-files/myskin instances).
+# myskin configuration — copy to config.yaml per deployment.
+# Secrets (API token, RAGFlow key) live in .env only.
 
 api:
   data_dir: ./data
   host: 0.0.0.0
   port: 8080
-  # Public URL — required so the catalog can expose file_url for every document.
+  registry_db: ./.myskin/sites.db
+  # Fallback public URL when a site omits public_base_url:
   public_base_url: https://myskin.example.com
 
-crawler:
-  seed_url: https://edu.gov.cz/
-  max_depth: 3
-  max_pages: 1000
-  request_delay: 2.5
-  user_agent: MyskinCrawler/1.0 (+https://github.com/KodzghlyCZ/myskin)
-  respect_robots: true
-  state_db: ./.myskin/crawl.db
-  refresh_known: true
-  resume_on_startup: true
-  sitemap_url: https://edu.gov.cz/sitemap_index.xml
-  # Or bind-mount a local urlset and set local_sitemap (see sofie-laws instance):
-  # local_sitemap: /app/sitemap/sitemap.xml
-  # local_sitemap_requeue: always   # re-crawl all URLs when sitemap has no <lastmod>
-  sitemap_only: true
-  # Hybrid mode: crawl sitemap pages but also queue PDF/DOC links found on those pages
-  follow_file_links: true
-  progress: auto
-
-  # HTML pages cannot be ingested by RAGFlow directly — convert to markdown.
-  html_to_markdown: true
-
-  # Store native file formats on disk and let RAGFlow DeepDoc parse them.
-  passthrough:
-    enabled: true
-    # When false, PDFs are text-extracted with pypdf into .md (legacy behaviour).
-    extract_pdf_text: false
-    extensions:
-      - .pdf
-      - .doc
-      - .docx
-      - .xls
-      - .xlsx
-      - .ppt
-      - .pptx
-      - .csv
-
-scheduler:
-  enabled: true
-  cron: "0 2 * * 0"
-  interval_hours: null
-  interval_minutes: null
-  run_on_startup: false
-  timezone: UTC
-
-# Push changed files to RAGFlow via dataset API (native PDF/DOCX parsing).
-# Disable the rest_api connector on the same dataset to avoid duplicate ingestion.
+# Shared RAGFlow API endpoint (per-site dataset_id below).
 ragflow:
-  enabled: false
   api_url: https://ragflow.example.com
-  dataset_id: ""
-  state_db: ./.myskin/ragflow_sync.db
-  sync_on_crawl_complete: true
-  parse_on_upload: true
-  delete_missing: true
+
+# Multi-site configuration. Each site crawls independently and pushes to its own dataset.
+sites:
+  - id: edu-gov-cz
+    name: Czech Ministry of Education
+    enabled: true
+    public_base_url: https://edu-gov-cz.myskin.example.com
+    crawler:
+      seed_url: https://edu.gov.cz/
+      max_depth: 3
+      max_pages: 100000
+      request_delay: 1.5
+      user_agent: MyskinCrawler/1.0 (+https://github.com/KodzghlyCZ/myskin)
+      respect_robots: true
+      refresh_known: true
+      resume_on_startup: true
+      sitemap_url: https://edu.gov.cz/sitemap_index.xml
+      sitemap_only: true
+      follow_file_links: true
+      progress: auto
+      html_to_markdown: true
+      passthrough:
+        enabled: true
+        extract_pdf_text: false
+        extensions:
+          - .pdf
+          - .doc
+          - .docx
+          - .xls
+          - .xlsx
+          - .ppt
+          - .pptx
+          - .csv
+    scheduler:
+      enabled: true
+      cron: "0 2 * * 0"
+      timezone: UTC
+      run_on_startup: false
+    ragflow:
+      enabled: true
+      dataset_id: ""
+      sync_on_crawl_complete: true
+      parse_on_upload: true
+      delete_missing: true
+
+  - id: sofie-laws
+    name: Sofie law excerpts
+    enabled: true
+    public_base_url: https://sofie-laws.myskin.example.com
+    crawler:
+      seed_url: https://www.zakonyprolidi.cz/
+      local_sitemap: /app/sitemap/sitemap.xml
+      local_sitemap_requeue: always
+      sitemap_only: true
+      max_pages: 500
+      request_delay: 2.0
+      html_to_markdown: true
+      passthrough:
+        enabled: true
+        extract_pdf_text: false
+    scheduler:
+      enabled: true
+      cron: "0 3 * * 0"
+      timezone: Europe/Prague
+    ragflow:
+      enabled: true
+      dataset_id: ""
+      sync_on_crawl_complete: true
+
+# Legacy single-site format (crawler:/scheduler:/ragflow: at root) is still supported
+# and auto-imported into the site registry on first startup when `sites:` is absent.

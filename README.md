@@ -7,7 +7,7 @@
 > *Crawling in my skin…* — Chester Bennington  
 > *Oh, oh yeah the bindis! Oh, there's bindis everywhere! Oh, embedded in the skin!* — Clarence Claymore
 
-Self-hosted service that **crawls** web pages and linked documents, stores them in format-aware files (HTML→markdown, PDF/DOC/DOCX passthrough), and **serves** them to [RAGFlow](https://github.com/infiniflow/ragflow).
+Self-hosted service that **crawls** web pages and linked documents, stores them in format-aware files (HTML→markdown, PDF/DOC/DOCX passthrough), and **pushes** them to [RAGFlow](https://github.com/infiniflow/ragflow) datasets via the dataset API.
 
 **Maintainers:** [docs/RUNBOOK.md](docs/RUNBOOK.md) · [Česky](docs/RUNBOOK.cs.md)
 
@@ -21,9 +21,9 @@ docker compose up -d --build
 
 - API: `http://localhost:8080`
 - Health: `GET /health`
-- Docs for RAGFlow: `GET /api/documents` (Bearer auth)
-- Crawl status: `GET /api/crawl/status`
-- Trigger crawl now: `POST /api/crawl/run`
+- Admin UI: `GET /admin` (manage sites, trigger crawls and RAGFlow sync)
+- Crawl dashboard: `GET /crawl`
+- Trigger crawl: `POST /api/sites/{site_id}/crawl/run`
 
 The internal scheduler runs crawls automatically — no host cron required.
 
@@ -32,14 +32,17 @@ The internal scheduler runs crawls automatically — no host cron required.
 ```
 ┌─────────────────────────────────────┐
 │  myskin (single process)            │
-│  ├─ FastAPI — RAGFlow catalog API   │
-│  ├─ APScheduler — configurable cron │
+│  ├─ FastAPI — site admin + crawl API│
+│  ├─ APScheduler — per-site cron     │
+│  ├─ Site registry — SQLite          │
 │  └─ Crawler — HTML/PDF → data/     │
 └─────────────────────────────────────┘
          │ volumes
          ├─ myskin-data  → /app/data
-         └─ myskin-state → /app/.myskin (crawl.db)
+         └─ myskin-state → /app/.myskin (sites.db, crawl state)
 ```
+
+One instance can manage **multiple sites**, each with its own crawl config, schedule, and RAGFlow `dataset_id`. Configure sites in `config.yaml` (`sites:` array) or via the admin UI / `POST /api/sites`.
 
 ## Scheduler configuration
 
@@ -82,12 +85,16 @@ Crawled files land in `data/crawl/<host>/pages/` (markdown) and `files/` (binary
 
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
-| `GET` | `/health` | No | Status, doc count, scheduler/crawl flags |
-| `GET` | `/api/documents` | Bearer | Paginated catalog for RAGFlow |
-| `GET` | `/api/documents/{id}` | Bearer | Single document |
-| `GET` | `/api/files/{id}` | Bearer | Download any catalog file (md, pdf, docx, …) |
-| `GET` | `/api/crawl/status` | Bearer | Scheduler + last crawl run |
-| `POST` | `/api/crawl/run` | Bearer | Trigger crawl immediately |
+| `GET` | `/health` | No | Status, doc counts, site count |
+| `GET` | `/admin` | No | Web UI for site management |
+| `GET` | `/api/sites` | Bearer | List configured sites |
+| `POST` | `/api/sites` | Bearer | Create a site |
+| `PUT` | `/api/sites/{id}` | Bearer | Update a site |
+| `POST` | `/api/sites/{id}/crawl/run` | Bearer | Trigger crawl for one site |
+| `POST` | `/api/sites/{id}/ragflow/sync` | Bearer | Push site files to RAGFlow |
+| `GET` | `/api/sites/{id}/files/{doc_id}` | Bearer | Download a crawled file |
+
+Legacy single-site endpoints (`/api/crawl/*`, `/api/files/*`, `/api/ragflow/sync`) still work against the default site.
 
 ## Local development (without Docker)
 
@@ -106,29 +113,23 @@ python -m myskin.crawl --max-depth 2 --max-pages 50 -v
 
 ## RAGFlow integration
 
-Two modes — use **one**, not both on the same dataset:
-
-### Pull: `rest_api` connector (text only)
-
-RAGFlow polls `GET /api/documents`. The connector coerces all content to `.txt` — fine for markdown summaries, useless for PDFs.
-
-### Push: RAGFlow dataset API (recommended for binaries)
-
-Enable `ragflow:` in config. After each crawl, myskin uploads **only changed** files via `POST /api/v1/datasets/{id}/documents`, then sets **`meta_fields`** (`url`, `source_url`, `file_url`, `title`, …) via `PUT …/documents/{id}`. Unchanged files still get a metadata refresh on each sync. Tracks `myskin_id → ragflow_document_id` in `ragflow.state_db`, deletes removed docs, and triggers parsing.
+myskin uses **push sync only** — files are uploaded to each site's RAGFlow dataset via `POST /api/v1/datasets/{id}/documents`. After each crawl, myskin uploads **only changed** files, sets **`meta_fields`** (`url`, `source_url`, `file_url`, `site_id`, `title`, …), tracks `myskin_id → ragflow_document_id` in per-site sync state, deletes removed docs, and triggers parsing.
 
 ```yaml
 ragflow:
-  enabled: true
-  api_url: https://ragflow.example.com
-  dataset_id: "<dataset-id>"
-  sync_on_crawl_complete: true
+  api_url: https://ragflow.example.com   # shared
+
+sites:
+  - id: edu-gov-cz
+    ragflow:
+      enabled: true
+      dataset_id: "<dataset-id>"
+      sync_on_crawl_complete: true
 ```
 
 Env: `MYSKIN_RAGFLOW_API_KEY=<ragflow-api-key>`
 
-Manual trigger: `POST /api/ragflow/sync` (Bearer myskin token).
-
-The catalog (`GET /api/documents`) still exposes metadata + `file_url` for debugging or other consumers.
+Manual trigger: `POST /api/sites/{site_id}/ragflow/sync` (Bearer myskin token).
 
 Full setup: [docs/RUNBOOK.md](docs/RUNBOOK.md) and `config.yaml.example`.
 
