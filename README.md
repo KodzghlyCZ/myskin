@@ -42,7 +42,7 @@ The internal scheduler runs crawls automatically — no host cron required.
          └─ myskin-state → /app/.myskin (sites.db, crawl state)
 ```
 
-One instance can manage **multiple sites**, each with its own crawl config, schedule, and RAGFlow `dataset_id`. Configure sites in `config.yaml` (`sites:` array) or via the admin UI / `POST /api/sites`.
+One instance can manage **multiple sites**, each with its own crawl config, schedule, and RAGFlow settings (`api_url`, `dataset_id`). **Configure scrapers in the admin UI** (`/admin`) or via `/api/sites` — settings live in SQLite (`.myskin/sites.db`). An optional `sites:` block in `config.yaml` is imported **only on first boot** when the registry is empty; later YAML changes do not overwrite the database.
 
 ## Scheduler configuration
 
@@ -115,16 +115,22 @@ python -m myskin.crawl --max-depth 2 --max-pages 50 -v
 
 myskin uses **push sync only** — files are uploaded to each site's RAGFlow dataset via `POST /api/v1/datasets/{id}/documents`. After each crawl, myskin uploads **only changed** files, sets **`meta_fields`** (`url`, `source_url`, `file_url`, `site_id`, `title`, …), tracks `myskin_id → ragflow_document_id` in per-site sync state, deletes removed docs, and triggers parsing.
 
+Per-site RAGFlow settings (including **`api_url`** and **`dataset_id`**) are stored in the site registry and edited in `/admin`. `config.yaml` may still set a default `ragflow.api_url` used when creating a site that omits it.
+
+```yaml
+# Instance shell (config.yaml) — optional default only:
+ragflow:
+  api_url: https://ragflow.example.com
+```
+
+In `/admin` (or `PUT /api/sites/{id}`), each scraper has:
+
 ```yaml
 ragflow:
-  api_url: https://ragflow.example.com   # shared
-
-sites:
-  - id: edu-gov-cz
-    ragflow:
-      enabled: true
-      dataset_id: "<dataset-id>"
-      sync_on_crawl_complete: true
+  enabled: true
+  api_url: https://ragflow.example.com   # per scraper
+  dataset_id: "<dataset-id>"
+  sync_on_crawl_complete: true
 ```
 
 Env: `MYSKIN_RAGFLOW_API_KEY=<ragflow-api-key>`

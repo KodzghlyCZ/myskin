@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 
 from myskin.config import settings
@@ -9,13 +10,23 @@ from myskin.sites.models import SiteRecord
 from myskin.sites.registry import SiteRegistry
 from myskin.ragflow_sync import RagflowSettings
 
+logger = logging.getLogger(__name__)
+
 
 class SiteService:
     def __init__(self, registry: SiteRegistry | None = None) -> None:
         self.registry = registry or SiteRegistry()
 
     def bootstrap(self) -> list[SiteRecord]:
-        return self.registry.sync_from_config()
+        before = self.registry.count()
+        sites = self.registry.sync_from_config()
+        if before > 0:
+            logger.info("Using site registry (%d site(s) in database)", before)
+        elif sites:
+            logger.info("Seeded site registry from config.yaml (%d site(s))", len(sites))
+        else:
+            logger.info("Site registry empty — add sites via /admin or /api/sites")
+        return sites
 
     def list_sites(self, *, enabled_only: bool = False) -> list[SiteRecord]:
         return self.registry.list_sites(enabled_only=enabled_only)

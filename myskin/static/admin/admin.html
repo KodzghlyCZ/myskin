@@ -24,28 +24,245 @@
 
   <main>
     <section class="toolbar">
-      <button id="refresh" type="button">Refresh</button>
-      <a class="link" href="/crawl">Crawl dashboard</a>
-      <a class="link" href="/docs">API docs</a>
+      <div class="toolbar-group">
+        <button id="refresh" type="button">Refresh</button>
+        <a class="link-button" href="/crawl">Global crawl dashboard</a>
+        <a class="link-button" href="/docs">API docs</a>
+      </div>
+      <div class="toolbar-note">
+        Manage scrapers here (stored in the database). Jump into the live crawl UI per site.
+      </div>
     </section>
 
     <section id="status" class="status" hidden></section>
 
-    <section class="sites">
-      <h2>Sites</h2>
-      <div id="sites" class="site-grid"></div>
+    <section class="summary-grid" id="summary">
+      <article class="summary-card">
+        <span class="summary-label">Sites</span>
+        <strong id="summary-sites">0</strong>
+      </article>
+      <article class="summary-card">
+        <span class="summary-label">Enabled</span>
+        <strong id="summary-enabled">0</strong>
+      </article>
+      <article class="summary-card">
+        <span class="summary-label">Running</span>
+        <strong id="summary-running">0</strong>
+      </article>
+      <article class="summary-card">
+        <span class="summary-label">Documents</span>
+        <strong id="summary-documents">0</strong>
+      </article>
     </section>
 
-    <section class="create">
-      <h2>Add site</h2>
-      <form id="create-form" class="create-form">
-        <label>Site ID <input name="site_id" required pattern="[a-z0-9][a-z0-9-]*" /></label>
-        <label>Name <input name="name" required /></label>
-        <label>Seed URL <input name="seed_url" type="url" required /></label>
-        <label>Public base URL <input name="public_base_url" type="url" /></label>
-        <label>RAGFlow dataset ID <input name="dataset_id" /></label>
-        <button type="submit">Create site</button>
-      </form>
+    <section class="layout-grid">
+      <section class="panel sites-panel">
+        <div class="panel-header">
+          <div>
+            <h2>Scrapers</h2>
+            <p class="panel-subtitle">Each site has crawl, scheduler, and RAGFlow controls.</p>
+          </div>
+        </div>
+        <div id="sites" class="site-grid"></div>
+      </section>
+
+      <aside class="panel editor-panel">
+        <div class="panel-header">
+          <div>
+            <h2 id="editor-title">Configuration</h2>
+            <p class="panel-subtitle">Select a scraper to edit its web configuration.</p>
+          </div>
+        </div>
+
+        <form id="edit-form" class="config-form" hidden>
+          <input type="hidden" name="site_id" />
+
+          <div class="form-section">
+            <h3>General</h3>
+            <div class="field-grid">
+              <label>Site ID
+                <input name="site_id_display" disabled />
+              </label>
+              <label>Name
+                <input name="name" required />
+              </label>
+              <label>Public base URL
+                <input name="public_base_url" type="url" />
+              </label>
+              <label class="checkbox">
+                <input name="enabled" type="checkbox" />
+                <span>Enabled</span>
+              </label>
+            </div>
+          </div>
+
+          <div class="form-section">
+            <h3>Crawler</h3>
+            <div class="field-grid">
+              <label>Seed URL
+                <input name="crawler.seed_url" type="url" required />
+              </label>
+              <label>Sitemap URL
+                <input name="crawler.sitemap_url" type="url" />
+              </label>
+              <label>Local sitemap path
+                <input name="crawler.local_sitemap" />
+              </label>
+              <label>Local sitemap requeue
+                <input name="crawler.local_sitemap_requeue" placeholder="always" />
+              </label>
+              <label>Max depth
+                <input name="crawler.max_depth" type="number" min="0" />
+              </label>
+              <label>Max pages
+                <input name="crawler.max_pages" type="number" min="1" />
+              </label>
+              <label>Request delay
+                <input name="crawler.request_delay" type="number" min="0" step="0.1" />
+              </label>
+              <label>User agent
+                <input name="crawler.user_agent" />
+              </label>
+              <label class="checkbox">
+                <input name="crawler.respect_robots" type="checkbox" />
+                <span>Respect robots.txt</span>
+              </label>
+              <label class="checkbox">
+                <input name="crawler.refresh_known" type="checkbox" />
+                <span>Refresh known URLs</span>
+              </label>
+              <label class="checkbox">
+                <input name="crawler.resume_on_startup" type="checkbox" />
+                <span>Resume on startup</span>
+              </label>
+              <label class="checkbox">
+                <input name="crawler.sitemap_only" type="checkbox" />
+                <span>Sitemap only</span>
+              </label>
+              <label class="checkbox">
+                <input name="crawler.follow_file_links" type="checkbox" />
+                <span>Follow file links</span>
+              </label>
+              <label class="checkbox">
+                <input name="crawler.html_to_markdown" type="checkbox" />
+                <span>HTML to markdown</span>
+              </label>
+              <label class="checkbox">
+                <input name="crawler.passthrough.enabled" type="checkbox" />
+                <span>Passthrough enabled</span>
+              </label>
+              <label class="checkbox">
+                <input name="crawler.passthrough.extract_pdf_text" type="checkbox" />
+                <span>Extract PDF text</span>
+              </label>
+              <label>Passthrough extensions
+                <input name="crawler.passthrough.extensions" placeholder=".pdf,.docx,.xlsx" />
+              </label>
+              <label>Progress mode
+                <input name="crawler.progress" placeholder="auto" />
+              </label>
+            </div>
+          </div>
+
+          <div class="form-section">
+            <h3>Scheduler</h3>
+            <div class="field-grid">
+              <label class="checkbox">
+                <input name="scheduler.enabled" type="checkbox" />
+                <span>Scheduler enabled</span>
+              </label>
+              <label>Cron
+                <input name="scheduler.cron" placeholder="0 2 * * 0" />
+              </label>
+              <label>Timezone
+                <input name="scheduler.timezone" placeholder="UTC" />
+              </label>
+              <label>Interval hours
+                <input name="scheduler.interval_hours" type="number" min="0" step="0.1" />
+              </label>
+              <label>Interval minutes
+                <input name="scheduler.interval_minutes" type="number" min="0" step="1" />
+              </label>
+              <label class="checkbox">
+                <input name="scheduler.run_on_startup" type="checkbox" />
+                <span>Run on startup</span>
+              </label>
+            </div>
+          </div>
+
+          <div class="form-section">
+            <h3>RAGFlow</h3>
+            <div class="field-grid">
+              <label class="checkbox">
+                <input name="ragflow.enabled" type="checkbox" />
+                <span>RAGFlow enabled</span>
+              </label>
+              <label>API URL
+                <input name="ragflow.api_url" type="url" placeholder="http://10.0.1.133:9380" />
+              </label>
+              <label>Dataset ID
+                <input name="ragflow.dataset_id" />
+              </label>
+              <label class="checkbox">
+                <input name="ragflow.sync_on_crawl_complete" type="checkbox" />
+                <span>Sync after crawl</span>
+              </label>
+              <label class="checkbox">
+                <input name="ragflow.parse_on_upload" type="checkbox" />
+                <span>Parse on upload</span>
+              </label>
+              <label class="checkbox">
+                <input name="ragflow.delete_missing" type="checkbox" />
+                <span>Delete missing docs</span>
+              </label>
+            </div>
+          </div>
+
+          <div class="form-actions">
+            <button type="submit">Save changes</button>
+            <button id="delete-site" type="button" class="danger">Delete site</button>
+          </div>
+        </form>
+
+        <section class="create">
+          <h3>Add site</h3>
+          <form id="create-form" class="config-form create-form">
+            <div class="field-grid">
+              <label>Site ID
+                <input name="site_id" required pattern="[a-z0-9][a-z0-9-]*" />
+              </label>
+              <label>Name
+                <input name="name" required />
+              </label>
+              <label>Seed URL
+                <input name="seed_url" type="url" required />
+              </label>
+              <label>Public base URL
+                <input name="public_base_url" type="url" />
+              </label>
+              <label>RAGFlow API URL
+                <input name="api_url" type="url" placeholder="http://10.0.1.133:9380" />
+              </label>
+              <label>RAGFlow dataset ID
+                <input name="dataset_id" />
+              </label>
+              <label>Cron
+                <input name="cron" placeholder="0 2 * * 0" />
+              </label>
+              <label>Timezone
+                <input name="timezone" placeholder="UTC" />
+              </label>
+              <label class="checkbox">
+                <input name="scheduler_enabled" type="checkbox" checked />
+                <span>Scheduler enabled</span>
+              </label>
+            </div>
+            <div class="form-actions">
+              <button type="submit">Create site</button>
+            </div>
+          </form>
+        </section>
+      </aside>
     </section>
   </main>
 

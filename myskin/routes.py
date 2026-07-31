@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import FileResponse, HTMLResponse
@@ -40,6 +41,7 @@ from myskin.models import (
 )
 from myskin.ragflow_sync import sync_site_to_ragflow
 from myskin.scheduler import get_next_run_at, reload_scheduler
+from myskin.settings_loader import cfg_optional
 from myskin.sites.models import SiteRecord
 from myskin.sites.service import site_service
 
@@ -54,6 +56,17 @@ _BRAND_STATIC_MEDIA = {
     ".png": "image/png",
     ".ico": "image/x-icon",
 }
+
+
+def _deep_merge_dict(base: dict[str, Any], patch: dict[str, Any]) -> dict[str, Any]:
+    """Merge patch into base; nested dicts are merged, other values replaced."""
+    merged = dict(base)
+    for key, value in patch.items():
+        if isinstance(value, dict) and isinstance(merged.get(key), dict):
+            merged[key] = _deep_merge_dict(merged[key], value)
+        else:
+            merged[key] = value
+    return merged
 
 
 def _site_summary(site: SiteRecord) -> SiteSummaryModel:
@@ -302,6 +315,11 @@ async def create_site(body: SiteCreateRequest) -> SiteDetailResponse:
         )
 
     now = datetime.now(timezone.utc)
+    ragflow = dict(body.ragflow)
+    if not str(ragflow.get("api_url") or "").strip():
+        global_url = cfg_optional("ragflow.api_url")
+        if global_url:
+            ragflow["api_url"] = str(global_url).strip().rstrip("/")
     record = SiteRecord(
         site_id=body.site_id,
         name=body.name,
@@ -309,7 +327,7 @@ async def create_site(body: SiteCreateRequest) -> SiteDetailResponse:
         public_base_url=body.public_base_url,
         crawler=body.crawler,
         scheduler=body.scheduler,
-        ragflow=body.ragflow,
+        ragflow=ragflow,
         created_at=now,
         updated_at=now,
     )
@@ -345,9 +363,21 @@ async def update_site(site_id: str, body: SiteUpdateRequest) -> SiteDetailRespon
             if body.public_base_url is not None
             else site.public_base_url
         ),
-        crawler=body.crawler if body.crawler is not None else site.crawler,
-        scheduler=body.scheduler if body.scheduler is not None else site.scheduler,
-        ragflow=body.ragflow if body.ragflow is not None else site.ragflow,
+        crawler=(
+            _deep_merge_dict(site.crawler, body.crawler)
+            if body.crawler is not None
+            else site.crawler
+        ),
+        scheduler=(
+            _deep_merge_dict(site.scheduler, body.scheduler)
+            if body.scheduler is not None
+            else site.scheduler
+        ),
+        ragflow=(
+            _deep_merge_dict(site.ragflow, body.ragflow)
+            if body.ragflow is not None
+            else site.ragflow
+        ),
         created_at=site.created_at,
         updated_at=datetime.now(timezone.utc),
     )

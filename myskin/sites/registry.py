@@ -145,8 +145,16 @@ class SiteRegistry:
         return int(row["n"]) if row else 0
 
     def sync_from_config(self) -> list[SiteRecord]:
-        """Import sites from config.yaml (sites[] array or legacy single-site block)."""
+        """Seed the registry from config.yaml once when empty.
+
+        Site config is DB-authoritative after first import. Existing rows are
+        never overwritten from YAML on subsequent startups.
+        """
         ensure_config_loaded()
+        existing = self.list_sites()
+        if existing:
+            return existing
+
         imported: list[SiteRecord] = []
         raw_sites = cfg_optional("sites")
         if isinstance(raw_sites, list) and raw_sites:
@@ -157,27 +165,18 @@ class SiteRegistry:
                 if not site_id:
                     continue
                 imported.append(self._record_from_mapping(site_id, entry))
-        elif self.count() == 0:
+        else:
             seed = str(cfg_get("crawler.seed_url", default="")).strip()
             if seed:
                 site_id = _slug_from_seed_url(seed)
                 imported.append(self._legacy_site_record(site_id))
 
+        if not imported:
+            return []
+
         saved: list[SiteRecord] = []
         for record in imported:
-            existing = self.get(record.site_id)
-            merged = SiteRecord(
-                site_id=record.site_id,
-                name=record.name,
-                enabled=record.enabled,
-                public_base_url=record.public_base_url,
-                crawler=record.crawler,
-                scheduler=record.scheduler,
-                ragflow=record.ragflow,
-                created_at=existing.created_at if existing else record.created_at,
-                updated_at=_utcnow(),
-            )
-            saved.append(self.upsert(merged))
+            saved.append(self.upsert(record))
         return saved
 
     def _legacy_site_record(self, site_id: str) -> SiteRecord:
