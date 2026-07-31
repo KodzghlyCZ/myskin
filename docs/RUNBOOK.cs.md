@@ -699,15 +699,22 @@ Konektor RAGFlow podporuje `query_params`; budoucí rozšíření myskin by mohl
 | `POST` | `/api/crawl/run` | Bearer | Blokující crawl (čeká na dokončení) |
 | `POST` | `/api/crawl/start` | Bearer | Crawl na pozadí |
 
-### Autentizace (Bearer)
+### Autentizace
 
-Chráněné routy očekávají:
+Chráněné `/api/*` routy přijímají:
+
+1. **Keycloak OIDC session** — když je `auth.enabled` v instance `config.yaml` (přihlášení přes `/auth/login`)
+2. **Bearer token** — `Authorization: Bearer <MYSKIN_API_TOKEN>` z `.env` (automatizace / curl)
+
+Obojí může běžet najednou. Prázdný API token a `auth.enabled: false` = auth vypnuto (jen lokálně).
 
 ```http
 Authorization: Bearer <MYSKIN_API_TOKEN>
 ```
 
-Token je pouze v `.env`. Prázdný token = auth vypnuto (v produkci nedoporučeno).
+OIDC je **pro celou instanci** (ne per scraper). Tajemství přes yayaya `${ENV}`: `SESSION_SECRET`, `OIDC_CLIENT_SECRET`.
+
+UI `/admin` a `/crawl` při zapnutém OIDC přesměruje na Keycloak; jinak se Bearer token zadá v UI jako dřív.
 
 ```bash
 # Health — no auth
@@ -724,8 +731,6 @@ curl -s -H "Authorization: Bearer $MYSKIN_API_TOKEN" \
 # OpenAPI
 open http://localhost:8080/docs
 ```
-
-HTML dashboard `/crawl` je bez autentizace; token vložíte v UI (uložen v `localStorage` prohlížeče).
 
 ### Query parametry (`/api/documents`)
 

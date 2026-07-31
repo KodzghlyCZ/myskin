@@ -3,8 +3,11 @@ import asyncio
 import logging
 
 from fastapi import FastAPI
+from starlette.middleware.sessions import SessionMiddleware
 
 from myskin import __version__
+from myskin.auth import configure_oauth, router as auth_router
+from myskin.config import settings
 from myskin.crawl_recovery import mark_interrupted_runs, recover_interrupted_crawl_on_startup
 from myskin.routes import router
 from myskin.scheduler import run_startup_crawls, start_scheduler, stop_scheduler
@@ -19,6 +22,7 @@ async def lifespan(app: FastAPI):
         level=logging.INFO,
         format="%(asctime)s %(levelname)s %(name)s %(message)s",
     )
+    configure_oauth()
     site_service.bootstrap()
     start_scheduler()
     startup_scheduled = any(
@@ -40,19 +44,26 @@ app = FastAPI(
     version=__version__,
     lifespan=lifespan,
 )
+app.add_middleware(
+    SessionMiddleware,
+    secret_key=settings.session_secret,
+    same_site="lax",
+    https_only=settings.session_https_only,
+)
+app.include_router(auth_router)
 app.include_router(router)
 
 
 def main() -> None:
     import uvicorn
 
-    from myskin.config import settings
-
     uvicorn.run(
         "myskin.main:app",
         host=settings.host,
         port=settings.port,
         reload=False,
+        proxy_headers=True,
+        forwarded_allow_ips="*",
     )
 
 

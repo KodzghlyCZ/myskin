@@ -6,16 +6,32 @@ const runMeta = document.getElementById("runMeta");
 const compactBar = document.getElementById("compactBar");
 const eventsEl = document.getElementById("events");
 const queueTailEl = document.getElementById("queueTail");
+const oidcAuthEl = document.getElementById("oidc-auth");
+const bearerAuthEl = document.getElementById("bearer-auth");
+const userLabelEl = document.getElementById("user-label");
+const loginBtn = document.getElementById("login-btn");
+const logoutBtn = document.getElementById("logout-btn");
 
 let lastHealth = null;
 let lastLiveData = null;
 let chartBfsMode = false;
+let oidcEnabled = false;
 
 tokenInput.value = localStorage.getItem(TOKEN_KEY) || "";
 document.getElementById("saveToken").onclick = () => {
   localStorage.setItem(TOKEN_KEY, tokenInput.value.trim());
   errorEl.textContent = "";
 };
+
+function redirectToLogin() {
+  window.location.href = "/auth/login";
+}
+
+loginBtn.addEventListener("click", () => redirectToLogin());
+logoutBtn.addEventListener("click", async () => {
+  await fetch("/auth/logout", { method: "POST", credentials: "same-origin" });
+  window.location.href = "/crawl";
+});
 
 const ctx = document.getElementById("chart");
 
@@ -268,15 +284,25 @@ function eventLabel(event) {
 
 function authHeaders() {
   const token = tokenInput.value.trim() || localStorage.getItem(TOKEN_KEY) || "";
-  if (!token) throw new Error("Set your API token first");
+  if (!token) return {};
   return { Authorization: `Bearer ${token}` };
 }
 
 async function api(path, options = {}) {
+  const headers = { ...authHeaders(), ...(options.headers || {}) };
+  const token = headers.Authorization;
+  if (!oidcEnabled && !token) {
+    throw new Error("Set your API token first");
+  }
   const res = await fetch(path, {
     ...options,
-    headers: { ...authHeaders(), ...(options.headers || {}) },
+    headers,
+    credentials: "same-origin",
   });
+  if (res.status === 401 && oidcEnabled && !token) {
+    redirectToLogin();
+    throw new Error("login_required");
+  }
   if (!res.ok) {
     const body = await res.text();
     throw new Error(`${res.status} ${body}`);
@@ -406,7 +432,7 @@ async function refresh() {
     errorEl.textContent = "";
     render(data);
   } catch (err) {
-    errorEl.textContent = err.message;
+    if (err.message !== "login_required") errorEl.textContent = err.message;
   }
 }
 
@@ -416,11 +442,50 @@ document.getElementById("startCrawl").onclick = async () => {
     errorEl.textContent = "";
     await refresh();
   } catch (err) {
-    errorEl.textContent = err.message;
+    if (err.message !== "login_required") errorEl.textContent = err.message;
   }
 };
 
-refreshHealth();
-refresh();
-setInterval(refresh, 1500);
-setInterval(refreshHealth, 5000);
+async function initAuth() {
+  let config = { enabled: false, bearer_enabled: true };
+  try {
+    const response = await fetch("/auth/config", { credentials: "same-origin" });
+    if (response.ok) config = await response.json();
+  } catch {
+    /* keep defaults */
+  }
+
+  oidcEnabled = Boolean(config.enabled);
+  if (oidcEnabled) {
+    oidcAuthEl.hidden = false;
+    if (!config.bearer_enabled) bearerAuthEl.hidden = true;
+
+    try {
+      const meRes = await fetch("/auth/me", { credentials: "same-origin" });
+      if (meRes.status === 401) {
+        loginBtn.hidden = false;
+        redirectToLogin();
+        return false;
+      }
+      if (meRes.ok) {
+        const me = await meRes.json();
+        const user = me.user || {};
+        userLabelEl.textContent =
+          user.email || user.name || user.preferred_username || "Signed in";
+        logoutBtn.hidden = false;
+      }
+    } catch {
+      loginBtn.hidden = false;
+    }
+  }
+  return true;
+}
+
+(async () => {
+  const ready = await initAuth();
+  if (!ready) return;
+  refreshHealth();
+  refresh();
+  setInterval(refresh, 1500);
+  setInterval(refreshHealth, 5000);
+})();

@@ -15,10 +15,17 @@
         <p class="subtitle">Multi-site crawler → RAGFlow push sync</p>
       </div>
     </div>
-    <div class="auth">
-      <label for="token">API token</label>
-      <input id="token" type="password" placeholder="Bearer token" autocomplete="off" />
-      <button id="save-token" type="button">Save</button>
+    <div class="auth" id="auth-panel">
+      <div id="oidc-auth" class="oidc-auth" hidden>
+        <span id="user-label" class="user-label"></span>
+        <button id="login-btn" type="button" hidden>Log in</button>
+        <button id="logout-btn" type="button" hidden>Log out</button>
+      </div>
+      <div id="bearer-auth" class="bearer-auth">
+        <label for="token">API token</label>
+        <input id="token" type="password" placeholder="Bearer token" autocomplete="off" />
+        <button id="save-token" type="button">Save</button>
+      </div>
     </div>
   </header>
 

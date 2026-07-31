@@ -18,9 +18,16 @@
       <img class="brand-logo" src="/static/brand/myskin-logo.png" alt="" width="40" height="40">
       <h1>myskin crawl dashboard</h1>
     </div>
-    <div class="auth">
-      <input id="token" type="password" placeholder="API token" size="24" autocomplete="off">
-      <button id="saveToken" type="button">Save token</button>
+    <div class="auth" id="auth-panel">
+      <div id="oidc-auth" class="oidc-auth" hidden>
+        <span id="user-label" class="user-label"></span>
+        <button id="login-btn" type="button" hidden>Log in</button>
+        <button id="logout-btn" type="button" hidden>Log out</button>
+      </div>
+      <div id="bearer-auth" class="bearer-auth">
+        <input id="token" type="password" placeholder="API token" size="24" autocomplete="off">
+        <button id="saveToken" type="button">Save token</button>
+      </div>
       <button id="startCrawl" type="button">Start crawl</button>
     </div>
   </header>

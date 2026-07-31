@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import FileResponse, HTMLResponse
 
 from myskin.admin import load_admin_html, resolve_admin_static_file
-from myskin.auth import require_token
+from myskin.auth import require_auth
 from myskin.catalog import catalog_stats, resolve_document_path, scan_documents
 from myskin.config import settings
 from myskin.crawl_runner import CrawlAlreadyRunningError, crawl_runner
@@ -287,7 +287,7 @@ async def health() -> HealthResponse:
     "/api/sites",
     response_model=SiteListResponse,
     tags=["sites"],
-    dependencies=[Depends(require_token)],
+    dependencies=[Depends(require_auth)],
 )
 async def list_sites() -> SiteListResponse:
     sites = site_service.list_sites()
@@ -299,7 +299,7 @@ async def list_sites() -> SiteListResponse:
     "/api/sites",
     response_model=SiteDetailResponse,
     tags=["sites"],
-    dependencies=[Depends(require_token)],
+    dependencies=[Depends(require_auth)],
     status_code=status.HTTP_201_CREATED,
 )
 async def create_site(body: SiteCreateRequest) -> SiteDetailResponse:
@@ -340,7 +340,7 @@ async def create_site(body: SiteCreateRequest) -> SiteDetailResponse:
     "/api/sites/{site_id}",
     response_model=SiteDetailResponse,
     tags=["sites"],
-    dependencies=[Depends(require_token)],
+    dependencies=[Depends(require_auth)],
 )
 async def get_site(site_id: str) -> SiteDetailResponse:
     return _site_detail(_resolve_site_or_404(site_id))
@@ -350,7 +350,7 @@ async def get_site(site_id: str) -> SiteDetailResponse:
     "/api/sites/{site_id}",
     response_model=SiteDetailResponse,
     tags=["sites"],
-    dependencies=[Depends(require_token)],
+    dependencies=[Depends(require_auth)],
 )
 async def update_site(site_id: str, body: SiteUpdateRequest) -> SiteDetailResponse:
     site = _resolve_site_or_404(site_id)
@@ -389,7 +389,7 @@ async def update_site(site_id: str, body: SiteUpdateRequest) -> SiteDetailRespon
 @router.delete(
     "/api/sites/{site_id}",
     tags=["sites"],
-    dependencies=[Depends(require_token)],
+    dependencies=[Depends(require_auth)],
 )
 async def delete_site(site_id: str) -> dict[str, str]:
     if not site_service.delete_site(site_id):
@@ -402,7 +402,7 @@ async def delete_site(site_id: str) -> dict[str, str]:
     "/api/sites/{site_id}/crawl/status",
     response_model=CrawlStatusResponse,
     tags=["crawl"],
-    dependencies=[Depends(require_token)],
+    dependencies=[Depends(require_auth)],
 )
 async def site_crawl_status(site_id: str) -> CrawlStatusResponse:
     return _build_crawl_status(_resolve_site_or_404(site_id))
@@ -412,7 +412,7 @@ async def site_crawl_status(site_id: str) -> CrawlStatusResponse:
     "/api/sites/{site_id}/crawl/live",
     response_model=CrawlLiveResponse,
     tags=["crawl"],
-    dependencies=[Depends(require_token)],
+    dependencies=[Depends(require_auth)],
 )
 async def site_crawl_live(site_id: str) -> CrawlLiveResponse:
     site = _resolve_site_or_404(site_id)
@@ -434,7 +434,7 @@ async def site_crawl_live(site_id: str) -> CrawlLiveResponse:
     "/api/sites/{site_id}/crawl/start",
     response_model=CrawlTriggerResponse,
     tags=["crawl"],
-    dependencies=[Depends(require_token)],
+    dependencies=[Depends(require_auth)],
 )
 async def site_crawl_start(site_id: str) -> CrawlTriggerResponse:
     import asyncio
@@ -465,7 +465,7 @@ async def site_crawl_start(site_id: str) -> CrawlTriggerResponse:
     "/api/sites/{site_id}/crawl/run",
     response_model=CrawlTriggerResponse,
     tags=["crawl"],
-    dependencies=[Depends(require_token)],
+    dependencies=[Depends(require_auth)],
 )
 async def site_crawl_run(site_id: str) -> CrawlTriggerResponse:
     import asyncio
@@ -502,7 +502,7 @@ async def site_crawl_run(site_id: str) -> CrawlTriggerResponse:
 @router.post(
     "/api/sites/{site_id}/ragflow/sync",
     tags=["ragflow"],
-    dependencies=[Depends(require_token)],
+    dependencies=[Depends(require_auth)],
 )
 async def site_ragflow_sync(site_id: str) -> dict[str, int]:
     _resolve_site_or_404(site_id)
@@ -523,7 +523,7 @@ async def site_ragflow_sync(site_id: str) -> dict[str, int]:
 @router.get(
     "/api/sites/{site_id}/files/{doc_id}",
     tags=["files"],
-    dependencies=[Depends(require_token)],
+    dependencies=[Depends(require_auth)],
 )
 async def site_download_file(site_id: str, doc_id: str) -> FileResponse:
     site = _resolve_site_or_404(site_id)
@@ -545,7 +545,7 @@ async def site_download_file(site_id: str, doc_id: str) -> FileResponse:
     "/api/crawl/live",
     response_model=CrawlLiveResponse,
     tags=["crawl"],
-    dependencies=[Depends(require_token)],
+    dependencies=[Depends(require_auth)],
 )
 async def crawl_live_status(
     site_id: str | None = Query(None, description="Site id (defaults to first enabled site)"),
@@ -560,7 +560,7 @@ async def crawl_live_status(
     "/api/crawl/start",
     response_model=CrawlTriggerResponse,
     tags=["crawl"],
-    dependencies=[Depends(require_token)],
+    dependencies=[Depends(require_auth)],
 )
 async def crawl_start(
     site_id: str | None = Query(None, description="Site id (defaults to first enabled site)"),
@@ -575,7 +575,7 @@ async def crawl_start(
     "/api/crawl/status",
     response_model=CrawlStatusResponse,
     tags=["crawl"],
-    dependencies=[Depends(require_token)],
+    dependencies=[Depends(require_auth)],
 )
 async def crawl_status(
     site_id: str | None = Query(None, description="Site id (defaults to first enabled site)"),
@@ -590,7 +590,7 @@ async def crawl_status(
     "/api/crawl/run",
     response_model=CrawlTriggerResponse,
     tags=["crawl"],
-    dependencies=[Depends(require_token)],
+    dependencies=[Depends(require_auth)],
 )
 async def crawl_run(
     site_id: str | None = Query(None, description="Site id (defaults to first enabled site)"),
@@ -604,7 +604,7 @@ async def crawl_run(
 @router.get(
     "/api/files/{doc_id}",
     tags=["files"],
-    dependencies=[Depends(require_token)],
+    dependencies=[Depends(require_auth)],
 )
 async def download_file(
     doc_id: str,
@@ -619,7 +619,7 @@ async def download_file(
 @router.post(
     "/api/ragflow/sync",
     tags=["ragflow"],
-    dependencies=[Depends(require_token)],
+    dependencies=[Depends(require_auth)],
 )
 async def ragflow_sync(
     site_id: str | None = Query(None, description="Site id (defaults to first enabled site)"),

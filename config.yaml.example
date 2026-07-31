@@ -1,10 +1,13 @@
 # myskin instance shell — copy to config.yaml per deployment.
-# Secrets (API token, RAGFlow key) live in .env only.
+# Secrets (API token, RAGFlow key, OIDC) live in .env only.
 #
 # Site/scraper config is stored in SQLite (api.registry_db) and managed via
 # /admin or /api/sites. An optional `sites:` block below is imported only when
 # the registry is empty (first boot). Existing DB rows are never overwritten
 # from YAML on restart.
+#
+# OIDC (Keycloak) is instance-wide — not per scraper. When auth.enabled is true,
+# /admin and /crawl use session login; Bearer MYSKIN_API_TOKEN still works for API.
 
 api:
   data_dir: ./data
@@ -13,6 +16,24 @@ api:
   registry_db: ./.myskin/sites.db
   # Fallback public URL when a site omits public_base_url:
   public_base_url: https://myskin.example.com
+
+# server:
+#   session_secret: ${SESSION_SECRET}
+#   session_https_only: false  # TLS at nginx
+
+# auth:
+#   enabled: true
+#   post_login_redirect: https://myskin.example.com/admin
+#   # allowed_group: myskin-users  # optional Keycloak group gate
+#   oidc:
+#     issuer_url: https://keycloak.example.com/realms/master
+#     client_id: myskin-dev
+#     client_secret: ${OIDC_CLIENT_SECRET}
+#     redirect_uri: https://myskin.example.com/auth/callback
+#     scopes:
+#       - openid
+#       - profile
+#       - email
 
 # Default RAGFlow API URL used when creating a site that omits ragflow.api_url.
 # Prefer setting api_url per scraper in /admin (stored in the site registry).

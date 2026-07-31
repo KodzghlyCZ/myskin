@@ -86,13 +86,17 @@ Crawled files land in `data/crawl/<host>/pages/` (markdown) and `files/` (binary
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
 | `GET` | `/health` | No | Status, doc counts, site count |
-| `GET` | `/admin` | No | Web UI for site management |
-| `GET` | `/api/sites` | Bearer | List configured sites |
-| `POST` | `/api/sites` | Bearer | Create a site |
-| `PUT` | `/api/sites/{id}` | Bearer | Update a site |
-| `POST` | `/api/sites/{id}/crawl/run` | Bearer | Trigger crawl for one site |
-| `POST` | `/api/sites/{id}/ragflow/sync` | Bearer | Push site files to RAGFlow |
-| `GET` | `/api/sites/{id}/files/{doc_id}` | Bearer | Download a crawled file |
+| `GET` | `/admin` | No* | Web UI for site management |
+| `GET` | `/auth/login` | — | Start Keycloak OIDC login (when `auth.enabled`) |
+| `GET` | `/auth/callback` | — | OIDC callback |
+| `GET` | `/api/sites` | Session or Bearer | List configured sites |
+| `POST` | `/api/sites` | Session or Bearer | Create a site |
+| `PUT` | `/api/sites/{id}` | Session or Bearer | Update a site |
+| `POST` | `/api/sites/{id}/crawl/run` | Session or Bearer | Trigger crawl for one site |
+| `POST` | `/api/sites/{id}/ragflow/sync` | Session or Bearer | Push site files to RAGFlow |
+| `GET` | `/api/sites/{id}/files/{doc_id}` | Session or Bearer | Download a crawled file |
+
+\* HTML pages are public; `/api/*` requires a Keycloak session (OIDC) and/or `MYSKIN_API_TOKEN` Bearer when configured. Instance `config.yaml` holds `auth.oidc` (same for all scrapers).
 
 Legacy single-site endpoints (`/api/crawl/*`, `/api/files/*`, `/api/ragflow/sync`) still work against the default site.
 

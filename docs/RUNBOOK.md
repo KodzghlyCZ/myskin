@@ -699,15 +699,27 @@ RAGFlow's connector supports `query_params`; a future myskin extension could sli
 | `POST` | `/api/crawl/run` | Bearer | Blocking crawl (waits for completion) |
 | `POST` | `/api/crawl/start` | Bearer | Background crawl |
 
-### Authentication (Bearer)
+### Authentication
 
-Protected routes expect:
+Protected `/api/*` routes accept either:
+
+1. **Keycloak OIDC session** — when `auth.enabled` is true in instance `config.yaml` (browser login via `/auth/login`)
+2. **Bearer token** — `Authorization: Bearer <MYSKIN_API_TOKEN>` from `.env` (automation / curl)
+
+Both can be enabled together. Empty API token and `auth.enabled: false` = auth off (local only).
 
 ```http
 Authorization: Bearer <MYSKIN_API_TOKEN>
 ```
 
-Token is set in `.env` only. Empty token = auth disabled (not recommended in production).
+OIDC is **instance-wide** (not per scraper). Secrets via yayaya `${ENV}`:
+
+| Env | Config key |
+|-----|------------|
+| `SESSION_SECRET` | `server.session_secret` |
+| `OIDC_CLIENT_SECRET` | `auth.oidc.client_secret` |
+
+The `/admin` and `/crawl` UIs redirect to Keycloak when OIDC is on; otherwise paste the Bearer token as before.
 
 ```bash
 # Health — no auth
@@ -724,8 +736,6 @@ curl -s -H "Authorization: Bearer $MYSKIN_API_TOKEN" \
 # OpenAPI
 open http://localhost:8080/docs
 ```
-
-The `/crawl` dashboard HTML is unauthenticated; you paste the token in the UI (stored in browser `localStorage`).
 
 ### Query parameters (`/api/documents`)
 

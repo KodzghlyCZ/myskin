@@ -13,8 +13,15 @@ const summaryEnabledEl = document.getElementById("summary-enabled");
 const summaryRunningEl = document.getElementById("summary-running");
 const summaryDocumentsEl = document.getElementById("summary-documents");
 
+const oidcAuthEl = document.getElementById("oidc-auth");
+const bearerAuthEl = document.getElementById("bearer-auth");
+const userLabelEl = document.getElementById("user-label");
+const loginBtn = document.getElementById("login-btn");
+const logoutBtn = document.getElementById("logout-btn");
+
 let selectedSiteId = null;
 let sitesCache = [];
+let oidcEnabled = false;
 
 function token() {
   return localStorage.getItem(TOKEN_KEY) || "";
@@ -26,6 +33,10 @@ function setStatus(message, kind = "ok") {
   statusEl.textContent = message;
 }
 
+function redirectToLogin() {
+  window.location.href = "/auth/login";
+}
+
 async function api(path, options = {}) {
   const headers = {
     "Content-Type": "application/json",
@@ -34,7 +45,15 @@ async function api(path, options = {}) {
   const value = token();
   if (value) headers.Authorization = `Bearer ${value}`;
 
-  const response = await fetch(path, { ...options, headers });
+  const response = await fetch(path, {
+    ...options,
+    headers,
+    credentials: "same-origin",
+  });
+  if (response.status === 401 && oidcEnabled && !value) {
+    redirectToLogin();
+    throw new Error("login_required");
+  }
   if (!response.ok) {
     const detail = await response.text();
     throw new Error(detail || `${response.status} ${response.statusText}`);
@@ -378,12 +397,59 @@ document.getElementById("refresh").addEventListener("click", async () => {
     await loadSites();
     setStatus("Refreshed");
   } catch (error) {
-    setStatus(error.message, "error");
+    if (error.message !== "login_required") setStatus(error.message, "error");
   }
 });
 
-tokenInput.value = token();
-loadSites().catch((error) => setStatus(error.message, "error"));
-setInterval(() => {
-  loadSites().catch(() => {});
-}, 10000);
+loginBtn.addEventListener("click", () => redirectToLogin());
+logoutBtn.addEventListener("click", async () => {
+  await fetch("/auth/logout", { method: "POST", credentials: "same-origin" });
+  window.location.href = "/admin";
+});
+
+async function initAuth() {
+  tokenInput.value = token();
+  let config = { enabled: false, bearer_enabled: true };
+  try {
+    const response = await fetch("/auth/config", { credentials: "same-origin" });
+    if (response.ok) config = await response.json();
+  } catch {
+    /* keep defaults */
+  }
+
+  oidcEnabled = Boolean(config.enabled);
+  if (oidcEnabled) {
+    oidcAuthEl.hidden = false;
+    if (!config.bearer_enabled) bearerAuthEl.hidden = true;
+
+    try {
+      const meRes = await fetch("/auth/me", { credentials: "same-origin" });
+      if (meRes.status === 401) {
+        loginBtn.hidden = false;
+        redirectToLogin();
+        return false;
+      }
+      if (meRes.ok) {
+        const me = await meRes.json();
+        const user = me.user || {};
+        userLabelEl.textContent =
+          user.email || user.name || user.preferred_username || "Signed in";
+        logoutBtn.hidden = false;
+      }
+    } catch {
+      loginBtn.hidden = false;
+    }
+  }
+  return true;
+}
+
+(async () => {
+  const ready = await initAuth();
+  if (!ready) return;
+  loadSites().catch((error) => {
+    if (error.message !== "login_required") setStatus(error.message, "error");
+  });
+  setInterval(() => {
+    loadSites().catch(() => {});
+  }, 10000);
+})();

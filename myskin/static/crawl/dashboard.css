@@ -51,6 +51,18 @@ h1 { margin: 0; font-size: 1.2rem; font-weight: 600; }
   flex-wrap: wrap;
 }
 
+.oidc-auth,
+.bearer-auth {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.user-label {
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
 input, button {
   font: inherit;
   border-radius: 8px;
