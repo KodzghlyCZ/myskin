@@ -17,7 +17,7 @@
 5. [Proč existuje myskin (místo pouze RAGFlow)](#5-proč-existuje-myskin-místo-pouze-ragflow)
 6. [Co je dnes postaveno](#6-co-je-dnes-postaveno)
 7. [Crawler, plánovač a sitemap](#7-crawler-plánovač-a-sitemap)
-8. [Crawl dashboard a live API](#8-crawl-dashboard-a-live-api)
+8. [Web UI a live API](#8-web-ui-a-live-api)
 9. [Referenční nasazení RAGFlow](#9-referenční-nasazení-ragflow)
 10. [Specifikace REST API konektoru RAGFlow](#10-specifikace-rest-api-konektoru-ragflow)
 11. [API kontrakt myskin](#11-api-kontrakt-myskin)
@@ -106,7 +106,7 @@ Potřebujeme systém, který:
 │                         MYSKIN (this repo) — IMPLEMENTED                 │
 │                                                                         │
 │  FastAPI  GET /api/documents?offset=&limit=                             │
-│           GET /crawl  — live crawl dashboard                            │
+│           GET /  — web UI (crawlers, live, charts, config)                            │
 │           scans data/ on each request → JSON { items, total }           │
 │           Bearer auth, stable IDs, updated_at for incremental sync      │
 │  APScheduler — weekly/interval crawls inside same process               │
@@ -193,7 +193,7 @@ myskin/
 │   ├── scheduler.py        # APScheduler internal cron/interval
 │   ├── crawl_runner.py     # thread-safe crawl execution + status
 │   ├── crawl_recovery.py   # resume interrupted runs on startup
-│   ├── dashboard.py        # HTML crawl dashboard (/crawl)
+│   ├── dashboard.py        # Brand/favicon static helpers
 │   ├── settings_loader.py  # yayaya config loader
 │   ├── crawler/
 │   │   ├── engine.py       # crawl loop, sitemap queue, frontier
@@ -203,7 +203,7 @@ myskin/
 │   │   ├── progress.py     # terminal progress (tty/log/off)
 │   │   ├── extract.py      # HTML→MD, PDF text
 │   │   └── fetch.py        # httpx + robots.txt
-│   └── routes.py           # API + /crawl + /api/crawl/*
+│   └── routes.py           # API + / UI + /api/sites/*/crawl/*
 ├── Dockerfile
 ├── docker-compose.yml
 ├── data/                   # document store (Docker volume myskin-data)
@@ -230,7 +230,7 @@ Načítáno přes [yayaya](https://pypi.org/project/yayaya/) (`MYSKIN_CONFIG_FIL
 - Interní **APScheduler** spouští crawly (cron nebo interval, řízeno configem)
 - Ruční spuštění: `POST /api/crawl/run` (blokující) nebo `POST /api/crawl/start` (na pozadí)
 - CLI: `python -m myskin.crawl`
-- Live dashboard: `GET /crawl` (Bearer token v prohlížeči)
+- Web UI: `GET /` (OIDC session a/nebo Bearer token v prohlížeči)
 - Volumes perzistují `data/` a `.myskin/crawl.db` přes restarty kontejneru
 
 **Důležité:** Docker bind-mounty `./data` na hostiteli se **ve výchozím stavu nepoužívají** — data žijí v pojmenovaném volume `myskin_myskin-data` → `/app/data`. Pro inspekci souborů použijte `docker volume inspect` nebo `docker compose exec`.
@@ -369,7 +369,7 @@ python -m myskin.crawl -v
 # or force TTY mode in config.yaml: crawler.progress: tty
 ```
 
-Pro monitoring v Dockeru preferujte **dashboard `/crawl`** — TTY split-screen je v `docker compose logs` nepohodlný.
+Pro monitoring v Dockeru preferujte **web UI `/`** — TTY split-screen je v `docker compose logs` nepohodlný.
 
 ### Link-crawl režim (legacy / fallback)
 
@@ -443,11 +443,11 @@ Při startu (`crawl_recovery.py`):
 
 ---
 
-## 8. Crawl dashboard a live API
+## 8. Web UI a live API
 
-UI v prohlížeči na **`GET /crawl`** — jednou zadáte API token (uložen v `localStorage`), poté:
+UI v prohlížeči na **`GET /`** — vyberte crawler pro live běhy, grafy a konfiguraci. Jednou zadejte API token při Bearer auth (uložen v `localStorage`), poté:
 
-- Spuštění crawlu (`POST /api/crawl/start`)
+- Spuštění crawlu (`POST /api/sites/{site_id}/crawl/start`; legacy `POST /api/crawl/start` stále funguje pro výchozí site)
 - Live statistiky seskupené podle **Běh**, **Sitemap**, **Stránky**, **PDF**
 - Nedávné události stránek s **klikatelnými source URL** (otevřete neúspěšné stránky v novém tabu pro ověření)
 - Graf (Chart.js, **bez animace**): fronta, počet ve sitemap, zpracováno vs. uplynulý čas
@@ -457,10 +457,12 @@ UI v prohlížeči na **`GET /crawl`** — jednou zadáte API token (uložen v `
 
 | Metoda | Cesta | Auth | Popis |
 |--------|-------|------|-------|
-| `GET` | `/api/crawl/live` | Bearer | Běžící příznak + live stav, vzorky, události |
-| `POST` | `/api/crawl/start` | Bearer | Spustit crawl na pozadí (neblokující) |
-| `GET` | `/api/crawl/status` | Bearer | Plánovač + statistiky posledního dokončeného běhu |
-| `POST` | `/api/crawl/run` | Bearer | Spustit crawl synchronně (čeká do dokončení) |
+| `GET` | `/api/sites/{id}/crawl/live` | Bearer | Per-site běžící příznak + live stav, vzorky, události |
+| `POST` | `/api/sites/{id}/crawl/start` | Bearer | Spustit crawl na pozadí (neblokující) |
+| `GET` | `/api/sites/{id}/crawl/status` | Bearer | Plánovač + statistiky posledního dokončeného běhu |
+| `POST` | `/api/sites/{id}/crawl/run` | Bearer | Spustit crawl synchronně (čeká do dokončení) |
+| `GET` | `/api/crawl/live` | Bearer | Legacy — výchozí site |
+| `POST` | `/api/crawl/start` | Bearer | Legacy — výchozí site |
 
 ### Skupiny statistik dashboardu
 
@@ -693,7 +695,7 @@ Konektor RAGFlow podporuje `query_params`; budoucí rozšíření myskin by mohl
 | `GET` | `/docs` | Ne | OpenAPI (Swagger) |
 | `GET` | `/api/documents` | Bearer | Stránkovaný katalog pro RAGFlow |
 | `GET` | `/api/documents/{id}` | Bearer | Jeden dokument |
-| `GET` | `/crawl` | Ne | HTML crawl dashboard (token zadaný v UI) |
+| `GET` | `/` | Ne | Web UI — crawlery, live, grafy, config |
 | `GET` | `/api/crawl/live` | Bearer | Live stav crawlu + vzorky grafu |
 | `GET` | `/api/crawl/status` | Bearer | Plánovač + poslední dokončený běh |
 | `POST` | `/api/crawl/run` | Bearer | Blokující crawl (čeká na dokončení) |
@@ -714,7 +716,7 @@ Authorization: Bearer <MYSKIN_API_TOKEN>
 
 OIDC je **pro celou instanci** (ne per scraper). Tajemství přes yayaya `${ENV}`: `SESSION_SECRET`, `OIDC_CLIENT_SECRET`.
 
-UI `/admin` a `/crawl` při zapnutém OIDC přesměruje na Keycloak; jinak se Bearer token zadá v UI jako dřív.
+UI `/` při zapnutém OIDC přesměruje na Keycloak; jinak se Bearer token zadá v UI jako dřív. `/admin` a `/crawl` přesměrují na `/`.
 
 ```bash
 # Health — no auth
@@ -921,7 +923,7 @@ Chroma `HttpClient` může servírovat více kolekcí ze vzdáleného stroje. U�
 3. `docker compose up -d --build`
 4. Spustit za reverse proxy s TLS (Caddy, nginx, Traefik)
 5. Exponovat **veřejné** URL pro RAGFlow (ne localhost)
-6. Otevřít `https://<host>/crawl` pro monitoring crawlů
+6. Otevřít `https://<host>/` pro správu a monitoring crawlů
 
 **Produkční image (GitLab CI):**
 
@@ -998,7 +1000,7 @@ curl "http://<ragflow-host>:9380/v1/connectors/<id>/logs" \
 
 ### Monitoring crawlu
 
-- Dashboard: `GET /crawl` (uložit API token v UI)
+- Web UI: `GET /` (uložit API token v UI při Bearer)
 - API: `GET /api/crawl/live`
 - Logy: `docker compose logs -f myskin`
 
@@ -1047,7 +1049,7 @@ curl "http://<ragflow-host>:9380/v1/connectors/<id>/logs" \
 | 2026-06-29 | Text v `data/`, ne surová PDF | Konektor `rest_api` mapuje pouze textová pole |
 | 2026-07-01 | Sitemap-first crawl pro edu.gov.cz | `lastmod` přeskočí nezměněné URL; inkrementální běhy za minuty, ne hodiny |
 | 2026-07-01 | `config.yaml` + yayaya pro nastavení | Ne-tajemství v gitu; `.env` pouze pro token |
-| 2026-07-01 | Live crawl dashboard na `/crawl` | Seskupené statistiky, graf, počty sitemap skipped/queued |
+| 2026-07-01 | Live crawl dashboard (později přesunut do `/`) | Seskupené statistiky, graf, počty sitemap skipped/queued |
 | 2026-07-01 | Chart.js: bez animace | Animované aktualizace způsobovaly skákání čar; okamžité `update("none")` |
 | 2026-07-01 | Hardening frontier crawleru | CSS skip, index canonicalization, ochrany proti cyklům a přepisům na běh |
 | 2026-07-01 | Recovery crawl po pádu | `resume_on_startup` + `crawl_recovery.py` |
@@ -1093,17 +1095,17 @@ Chronologický log toho, co bylo postaveno a rozhodnuto během implementační s
 | Začátek | Znovuspuštění crawlu | Restart kontejneru po změně configu; `POST /api/crawl/run` | [§16](#16-provozní-postupy) |
 | Začátek | Kde je `data/`? | Docker pojmenovaný volume `myskin_myskin-data`, ne host `./data` | [§6](#6-co-je-dnes-postaveno), [§16](#16-provozní-postupy) |
 | Začátek | Rozsah `max_pages` | Strop fetchů na běh, ne celoživotní limit korpusu | [§7](#7-crawler-plánovač-a-sitemap) |
-| Střed | Terminálový progress | `progress.py` tty/log režimy; v Dockeru preferován dashboard | [§7](#7-crawler-plánovač-a-sitemap), [§8](#8-crawl-dashboard-a-live-api) |
+| Střed | Terminálový progress | `progress.py` tty/log režimy; v Dockeru preferován dashboard | [§7](#7-crawler-plánovač-a-sitemap), [§8](#8-web-ui-a-live-api) |
 | Střed | CSS poisoning | Přeskočit URL `.css` (ignorovat query string) | [§7](#7-crawler-plánovač-a-sitemap) |
 | Střed | Obnova po pádu | Přerušit nedokončené běhy; volitelný recovery crawl při startu | [§7](#7-crawler-plánovač-a-sitemap) |
 | Střed | Smyčka `index.md` | Kanonizovat `/index` → `/` | [§7](#7-crawler-plánovač-a-sitemap), [§17](#17-řešení-problémů) |
 | Střed | Cykly ve frontě | Frontier `enqueued_urls` / `enqueued_paths` | [§7](#7-crawler-plánovač-a-sitemap) |
 | Střed | Spam dynamických stránek | `updated_paths` — žádný druhý zápis stejné cesty za běh | [§7](#7-crawler-plánovač-a-sitemap) |
-| Střed | Události dashboardu | Klikatelné URL v seznamu nedávných stránek | [§8](#8-crawl-dashboard-a-live-api) |
+| Střed | Události dashboardu | Klikatelné URL v seznamu nedávných stránek | [§8](#8-web-ui-a-live-api) |
 | Střed | YAML config | `config.yaml` + yayaya; `.env` pouze tajemství | [§6](#6-co-je-dnes-postaveno), [§11](#11-api-kontrakt-myskin) |
 | Pozdě | Sitemap crawl | `sitemap_index.xml` + `<lastmod>` vs `last_changed_at` | [§7](#7-crawler-plánovač-a-sitemap), [§13](#13-cílový-web-edugovcz) |
-| Pozdě | Facelift dashboardu | Seskupené statistiky; `discovered` = počet URL ve sitemap; `sitemap_skipped` | [§8](#8-crawl-dashboard-a-live-api) |
-| Pozdě | Animace grafu | Vyzkoušeny push/animate vzory; **nasazeno s `animation: false`** | [§8](#8-crawl-dashboard-a-live-api) |
+| Pozdě | Facelift dashboardu | Seskupené statistiky; `discovered` = počet URL ve sitemap; `sitemap_skipped` | [§8](#8-web-ui-a-live-api) |
+| Pozdě | Animace grafu | Vyzkoušeny push/animate vzory; **nasazeno s `animation: false`** | [§8](#8-web-ui-a-live-api) |
 | Pozdě | Otázka multi-KB | Jeden myskin = jeden katalog; více RAGFlow KB potřebuje návrh | [§10](#10-specifikace-rest-api-konektoru-ragflow) |
 
 ### Reference: prior art

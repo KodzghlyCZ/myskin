@@ -39,7 +39,7 @@ class Settings:
 
         auth_enabled = cfg_bool("auth.enabled", False)
         post_login_redirect = str(
-            cfg_get("auth.post_login_redirect", default="/admin")
+            cfg_get("auth.post_login_redirect", default="/")
         )
         allowed_raw = cfg_optional("auth.allowed_group")
         allowed_group = (

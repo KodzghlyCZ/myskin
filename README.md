@@ -20,9 +20,7 @@ docker compose up -d --build
 ```
 
 - API: `http://localhost:8080`
-- Health: `GET /health`
-- Admin UI: `GET /admin` (manage sites, trigger crawls and RAGFlow sync)
-- Crawl dashboard: `GET /crawl`
+- Web UI: `GET /` (crawler list, live runs, charts, config)
 - Trigger crawl: `POST /api/sites/{site_id}/crawl/run`
 
 The internal scheduler runs crawls automatically — no host cron required.
@@ -42,7 +40,7 @@ The internal scheduler runs crawls automatically — no host cron required.
          └─ myskin-state → /app/.myskin (sites.db, crawl state)
 ```
 
-One instance can manage **multiple sites**, each with its own crawl config, schedule, and RAGFlow settings (`api_url`, `dataset_id`). **Configure scrapers in the admin UI** (`/admin`) or via `/api/sites` — settings live in SQLite (`.myskin/sites.db`). An optional `sites:` block in `config.yaml` is imported **only on first boot** when the registry is empty; later YAML changes do not overwrite the database.
+One instance can manage **multiple sites**, each with its own crawl config, schedule, and RAGFlow settings (`api_url`, `dataset_id`). **Configure scrapers in the web UI** (`/`) or via `/api/sites` — settings live in SQLite (`.myskin/sites.db`). An optional `sites:` block in `config.yaml` is imported **only on first boot** when the registry is empty; later YAML changes do not overwrite the database.
 
 ## Scheduler configuration
 
@@ -86,7 +84,7 @@ Crawled files land in `data/crawl/<host>/pages/` (markdown) and `files/` (binary
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
 | `GET` | `/health` | No | Status, doc counts, site count |
-| `GET` | `/admin` | No* | Web UI for site management |
+| `GET` | `/` | No* | Web UI — crawlers, live runs, charts, config |
 | `GET` | `/auth/login` | — | Start Keycloak OIDC login (when `auth.enabled`) |
 | `GET` | `/auth/callback` | — | OIDC callback |
 | `GET` | `/api/sites` | Session or Bearer | List configured sites |
@@ -96,7 +94,7 @@ Crawled files land in `data/crawl/<host>/pages/` (markdown) and `files/` (binary
 | `POST` | `/api/sites/{id}/ragflow/sync` | Session or Bearer | Push site files to RAGFlow |
 | `GET` | `/api/sites/{id}/files/{doc_id}` | Session or Bearer | Download a crawled file |
 
-\* HTML pages are public; `/api/*` requires a Keycloak session (OIDC) and/or `MYSKIN_API_TOKEN` Bearer when configured. Instance `config.yaml` holds `auth.oidc` (same for all scrapers).
+\* HTML pages are public; `/api/*` requires a Keycloak session (OIDC) and/or `MYSKIN_API_TOKEN` Bearer when configured. Instance `config.yaml` holds `auth.oidc` (same for all scrapers). `/admin` and `/crawl` redirect to `/`.
 
 Legacy single-site endpoints (`/api/crawl/*`, `/api/files/*`, `/api/ragflow/sync`) still work against the default site.
 
@@ -119,7 +117,7 @@ python -m myskin.crawl --max-depth 2 --max-pages 50 -v
 
 myskin uses **push sync only** — files are uploaded to each site's RAGFlow dataset via `POST /api/v1/datasets/{id}/documents`. After each crawl, myskin uploads **only changed** files, sets **`meta_fields`** (`url`, `source_url`, `file_url`, `site_id`, `title`, …), tracks `myskin_id → ragflow_document_id` in per-site sync state, deletes removed docs, and triggers parsing.
 
-Per-site RAGFlow settings (including **`api_url`** and **`dataset_id`**) are stored in the site registry and edited in `/admin`. `config.yaml` may still set a default `ragflow.api_url` used when creating a site that omits it.
+Per-site RAGFlow settings (including **`api_url`** and **`dataset_id`**) are stored in the site registry and edited in `/`. `config.yaml` may still set a default `ragflow.api_url` used when creating a site that omits it.
 
 ```yaml
 # Instance shell (config.yaml) — optional default only:
@@ -127,7 +125,7 @@ ragflow:
   api_url: https://ragflow.example.com
 ```
 
-In `/admin` (or `PUT /api/sites/{id}`), each scraper has:
+In `/` (or `PUT /api/sites/{id}`), each scraper has:
 
 ```yaml
 ragflow:

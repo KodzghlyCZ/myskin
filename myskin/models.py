@@ -104,7 +104,7 @@ class CrawlLiveQueueItemModel(BaseModel):
 
 
 class CrawlLiveStateModel(BaseModel):
-    active: bool
+    active: bool = False
     run_id: int | None = None
     seed_url: str = ""
     trigger: str = ""

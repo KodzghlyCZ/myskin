@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 
 from myskin.admin import load_admin_html, resolve_admin_static_file
 from myskin.auth import require_auth
@@ -18,9 +18,7 @@ from myskin.dashboard import (
     apple_touch_icon_path,
     brand_logo_path,
     favicon_path,
-    load_dashboard_html,
     resolve_brand_static_file,
-    resolve_crawl_static_file,
 )
 from myskin.formats import guess_mime_type
 from myskin.models import (
@@ -47,11 +45,10 @@ from myskin.sites.service import site_service
 
 router = APIRouter()
 
-_CRAWL_STATIC_MEDIA = {
+_ADMIN_STATIC_MEDIA = {
     ".css": "text/css; charset=utf-8",
     ".js": "application/javascript; charset=utf-8",
 }
-_ADMIN_STATIC_MEDIA = _CRAWL_STATIC_MEDIA
 _BRAND_STATIC_MEDIA = {
     ".png": "image/png",
     ".ico": "image/x-icon",
@@ -139,6 +136,10 @@ def _build_crawl_status(site: SiteRecord) -> CrawlStatusResponse:
     )
 
 
+def _empty_live_state() -> CrawlLiveStateModel:
+    return CrawlLiveStateModel(active=False)
+
+
 def _build_live_state() -> CrawlLiveStateModel:
     data = crawl_live.to_dict()
     stats = data["stats"]
@@ -175,6 +176,22 @@ def _build_live_state() -> CrawlLiveStateModel:
     )
 
 
+def _live_state_for_site(site_id: str) -> CrawlLiveStateModel:
+    """Only expose the in-memory live stream for the site that owns the active run."""
+    if crawl_runner.running and crawl_runner.running_site_id == site_id:
+        return _build_live_state()
+    # Finished run still in memory for this site (runner idle, last snapshot matches).
+    snap = crawl_runner.snapshot_for(site_id)
+    if (
+        not crawl_runner.running
+        and snap is not None
+        and crawl_live.run_id is not None
+        and snap.run_id == crawl_live.run_id
+    ):
+        return _build_live_state()
+    return _empty_live_state()
+
+
 @router.get("/favicon.ico", include_in_schema=False)
 async def favicon() -> FileResponse:
     icon = favicon_path()
@@ -208,13 +225,13 @@ async def brand_static(asset_name: str) -> FileResponse:
     return FileResponse(path, media_type=media_type)
 
 
-@router.get("/admin", response_class=HTMLResponse, tags=["admin"])
-async def admin_dashboard() -> HTMLResponse:
+@router.get("/", response_class=HTMLResponse, tags=["admin"])
+async def root_app() -> HTMLResponse:
     return HTMLResponse(load_admin_html())
 
 
-@router.get("/admin/static/{asset_name}", tags=["admin"])
-async def admin_static(asset_name: str) -> FileResponse:
+@router.get("/static/{asset_name}", tags=["admin"])
+async def app_static(asset_name: str) -> FileResponse:
     path = resolve_admin_static_file(asset_name)
     if path is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
@@ -222,18 +239,24 @@ async def admin_static(asset_name: str) -> FileResponse:
     return FileResponse(path, media_type=media_type)
 
 
-@router.get("/crawl", response_class=HTMLResponse, tags=["crawl"])
-async def crawl_dashboard() -> HTMLResponse:
-    return HTMLResponse(load_dashboard_html())
+@router.get("/admin", include_in_schema=False)
+async def admin_redirect() -> RedirectResponse:
+    return RedirectResponse(url="/", status_code=status.HTTP_302_FOUND)
 
 
-@router.get("/crawl/static/{asset_name}", tags=["crawl"])
-async def crawl_dashboard_static(asset_name: str) -> FileResponse:
-    path = resolve_crawl_static_file(asset_name)
-    if path is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
-    media_type = _CRAWL_STATIC_MEDIA.get(path.suffix.lower(), "application/octet-stream")
-    return FileResponse(path, media_type=media_type)
+@router.get("/admin/static/{asset_name}", include_in_schema=False)
+async def admin_static_redirect(asset_name: str) -> RedirectResponse:
+    return RedirectResponse(url=f"/static/{asset_name}", status_code=status.HTTP_302_FOUND)
+
+
+@router.get("/crawl", include_in_schema=False)
+async def crawl_redirect() -> RedirectResponse:
+    return RedirectResponse(url="/", status_code=status.HTTP_302_FOUND)
+
+
+@router.get("/crawl/static/{asset_name}", include_in_schema=False)
+async def crawl_static_redirect(asset_name: str) -> RedirectResponse:
+    return RedirectResponse(url="/", status_code=status.HTTP_302_FOUND)
 
 
 @router.get("/health", response_model=HealthResponse, tags=["meta"])
@@ -416,11 +439,11 @@ async def site_crawl_status(site_id: str) -> CrawlStatusResponse:
 )
 async def site_crawl_live(site_id: str) -> CrawlLiveResponse:
     site = _resolve_site_or_404(site_id)
-    snap = crawl_runner.snapshot_for(site.site_id) or crawl_runner.last_snapshot
+    snap = crawl_runner.snapshot_for(site.site_id)
     sched = site_service.scheduler_settings_for(site)
     return CrawlLiveResponse(
         running=crawl_runner.running and crawl_runner.running_site_id == site.site_id,
-        live=_build_live_state(),
+        live=_live_state_for_site(site.site_id),
         scheduler_enabled=sched.enabled,
         schedule=sched.schedule_description,
         next_run_at=get_next_run_at(site.site_id),

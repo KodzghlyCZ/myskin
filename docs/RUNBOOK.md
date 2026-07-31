@@ -17,7 +17,7 @@
 5. [Why myskin exists (instead of only RAGFlow)](#5-why-myskin-exists-instead-of-only-ragflow)
 6. [What is built today](#6-what-is-built-today)
 7. [Crawler, scheduler & sitemap](#7-crawler-scheduler--sitemap)
-8. [Crawl dashboard & live API](#8-crawl-dashboard--live-api)
+8. [Web UI & live API](#8-web-ui--live-api)
 9. [RAGFlow deployment reference](#9-ragflow-deployment-reference)
 10. [RAGFlow REST API connector spec](#10-ragflow-rest-api-connector-spec)
 11. [myskin API contract](#11-myskin-api-contract)
@@ -106,7 +106,7 @@ We need a system that:
 │                         MYSKIN (this repo) — IMPLEMENTED                 │
 │                                                                         │
 │  FastAPI  GET /api/documents?offset=&limit=                             │
-│           GET /crawl  — live crawl dashboard                            │
+│           GET /  — web UI (crawlers, live, charts, config)                            │
 │           scans data/ on each request → JSON { items, total }           │
 │           Bearer auth, stable IDs, updated_at for incremental sync      │
 │  APScheduler — weekly/interval crawls inside same process               │
@@ -193,7 +193,7 @@ myskin/
 │   ├── scheduler.py        # APScheduler internal cron/interval
 │   ├── crawl_runner.py     # thread-safe crawl execution + status
 │   ├── crawl_recovery.py   # resume interrupted runs on startup
-│   ├── dashboard.py        # HTML crawl dashboard (/crawl)
+│   ├── dashboard.py        # Brand/favicon static helpers
 │   ├── settings_loader.py  # yayaya config loader
 │   ├── crawler/
 │   │   ├── engine.py       # crawl loop, sitemap queue, frontier
@@ -203,7 +203,7 @@ myskin/
 │   │   ├── progress.py     # terminal progress (tty/log/off)
 │   │   ├── extract.py      # HTML→MD, PDF text
 │   │   └── fetch.py        # httpx + robots.txt
-│   └── routes.py           # API + /crawl + /api/crawl/*
+│   └── routes.py           # API + / UI + /api/sites/*/crawl/*
 ├── Dockerfile
 ├── docker-compose.yml
 ├── data/                   # document store (Docker volume myskin-data)
@@ -230,7 +230,7 @@ Loaded via [yayaya](https://pypi.org/project/yayaya/) (`MYSKIN_CONFIG_FILES=conf
 - Internal **APScheduler** triggers crawls (cron or interval, config-driven)
 - Manual trigger: `POST /api/crawl/run` (blocking) or `POST /api/crawl/start` (background)
 - CLI: `python -m myskin.crawl`
-- Live dashboard: `GET /crawl` (Bearer token in browser)
+- Web UI: `GET /` (OIDC session and/or Bearer token in browser)
 - Volumes persist `data/` and `.myskin/crawl.db` across container restarts
 
 **Important:** Docker bind-mounts `./data` on the host are **not** used by default — data lives in the named volume `myskin_myskin-data` → `/app/data`. Use `docker volume inspect` or `docker compose exec` to inspect files.
@@ -369,7 +369,7 @@ python -m myskin.crawl -v
 # or force TTY mode in config.yaml: crawler.progress: tty
 ```
 
-Prefer **`/crawl` dashboard** for Docker monitoring — TTY split-screen is awkward in `docker compose logs`.
+Prefer the **web UI at `/`** for Docker monitoring — TTY split-screen is awkward in `docker compose logs`.
 
 ### Link-crawl mode (legacy / fallback)
 
@@ -443,11 +443,11 @@ On startup (`crawl_recovery.py`):
 
 ---
 
-## 8. Crawl dashboard & live API
+## 8. Web UI & live API
 
-Browser UI at **`GET /crawl`** — enter API token once (stored in `localStorage`), then:
+Browser UI at **`GET /`** — select a crawler for live runs, charts, and config. Enter API token once when Bearer auth is used (stored in `localStorage`), then:
 
-- Start crawl (`POST /api/crawl/start`)
+- Start crawl (`POST /api/sites/{site_id}/crawl/start`; legacy `POST /api/crawl/start` still works for the default site)
 - Live stats grouped by **Run**, **Sitemap**, **Pages**, **PDFs**
 - Recent page events with **clickable source URLs** (open failed pages in a new tab to verify)
 - Chart (Chart.js, **no animation**): queue, in-sitemap count, processed vs elapsed time
@@ -457,10 +457,12 @@ Browser UI at **`GET /crawl`** — enter API token once (stored in `localStorage
 
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
-| `GET` | `/api/crawl/live` | Bearer | Running flag + live state, samples, events |
-| `POST` | `/api/crawl/start` | Bearer | Start crawl in background (non-blocking) |
-| `GET` | `/api/crawl/status` | Bearer | Scheduler + last finished run stats |
-| `POST` | `/api/crawl/run` | Bearer | Run crawl synchronously (waits until done) |
+| `GET` | `/api/sites/{id}/crawl/live` | Bearer | Per-site running flag + live state, samples, events |
+| `POST` | `/api/sites/{id}/crawl/start` | Bearer | Start crawl in background (non-blocking) |
+| `GET` | `/api/sites/{id}/crawl/status` | Bearer | Scheduler + last finished run stats |
+| `POST` | `/api/sites/{id}/crawl/run` | Bearer | Run crawl synchronously (waits until done) |
+| `GET` | `/api/crawl/live` | Bearer | Legacy — default site (same payload) |
+| `POST` | `/api/crawl/start` | Bearer | Legacy — default site |
 
 ### Dashboard stat groups
 
@@ -693,7 +695,7 @@ RAGFlow's connector supports `query_params`; a future myskin extension could sli
 | `GET` | `/docs` | No | OpenAPI (Swagger) |
 | `GET` | `/api/documents` | Bearer | Paginated catalog for RAGFlow |
 | `GET` | `/api/documents/{id}` | Bearer | Single document |
-| `GET` | `/crawl` | No | HTML crawl dashboard (token entered in UI) |
+| `GET` | `/` | No | Web UI — crawlers, live, charts, config |
 | `GET` | `/api/crawl/live` | Bearer | Live crawl state + chart samples |
 | `GET` | `/api/crawl/status` | Bearer | Scheduler + last finished run |
 | `POST` | `/api/crawl/run` | Bearer | Blocking crawl (waits for completion) |
@@ -719,7 +721,7 @@ OIDC is **instance-wide** (not per scraper). Secrets via yayaya `${ENV}`:
 | `SESSION_SECRET` | `server.session_secret` |
 | `OIDC_CLIENT_SECRET` | `auth.oidc.client_secret` |
 
-The `/admin` and `/crawl` UIs redirect to Keycloak when OIDC is on; otherwise paste the Bearer token as before.
+The `/` UI redirects to Keycloak when OIDC is on; otherwise paste the Bearer token as before. `/admin` and `/crawl` redirect to `/`.
 
 ```bash
 # Health — no auth
@@ -926,7 +928,7 @@ Chroma `HttpClient` can serve multiple collections from a remote machine. Useful
 3. `docker compose up -d --build`
 4. Run behind reverse proxy with TLS (Caddy, nginx, Traefik)
 5. Expose **public** URL for RAGFlow (not localhost)
-6. Open `https://<host>/crawl` to monitor crawls
+6. Open `https://<host>/` to manage and monitor crawls
 
 **Production image (GitLab CI):**
 
@@ -1003,7 +1005,7 @@ curl "http://<ragflow-host>:9380/v1/connectors/<id>/logs" \
 
 ### Monitor a crawl
 
-- Dashboard: `GET /crawl` (save API token in UI)
+- Web UI: `GET /` (save API token in UI when using Bearer)
 - API: `GET /api/crawl/live`
 - Logs: `docker compose logs -f myskin`
 
@@ -1052,7 +1054,7 @@ curl "http://<ragflow-host>:9380/v1/connectors/<id>/logs" \
 | 2026-06-29 | Text in `data/` not raw PDFs | `rest_api` connector maps text fields only |
 | 2026-07-01 | Sitemap-first crawl for edu.gov.cz | `lastmod` skips unchanged URLs; incremental runs in minutes not hours |
 | 2026-07-01 | `config.yaml` + yayaya for settings | Non-secrets in git; `.env` for token only |
-| 2026-07-01 | Live crawl dashboard at `/crawl` | Grouped stats, chart, sitemap skipped/queued counts |
+| 2026-07-01 | Live crawl dashboard (later moved into `/`) | Grouped stats, chart, sitemap skipped/queued counts |
 | 2026-07-01 | Chart.js: no animation | Animated updates caused line jumping; instant `update("none")` |
 | 2026-07-01 | Crawler frontier hardening | CSS skip, index canonicalization, cycle + per-run rewrite guards |
 | 2026-07-01 | Crash recovery crawl | `resume_on_startup` + `crawl_recovery.py` |
@@ -1098,17 +1100,17 @@ Chronological log of what was built and decided during the July 2026 implementat
 | Early | Retrigger crawl | Restart container after config change; `POST /api/crawl/run` | [§16](#16-operations-procedures) |
 | Early | Where is `data/`? | Docker named volume `myskin_myskin-data`, not host `./data` | [§6](#6-what-is-built-today), [§16](#16-operations-procedures) |
 | Early | `max_pages` scope | Per-run cap on fetches, not lifetime corpus limit | [§7](#7-crawler-scheduler--sitemap) |
-| Mid | Terminal progress | `progress.py` tty/log modes; dashboard preferred in Docker | [§7](#7-crawler-scheduler--sitemap), [§8](#8-crawl-dashboard--live-api) |
+| Mid | Terminal progress | `progress.py` tty/log modes; dashboard preferred in Docker | [§7](#7-crawler-scheduler--sitemap), [§8](#8-web-ui--live-api) |
 | Mid | CSS poisoning | Skip `.css` URLs (ignore query string) | [§7](#7-crawler-scheduler--sitemap) |
 | Mid | Crash recovery | Abort unfinished runs; optional recovery crawl on startup | [§7](#7-crawler-scheduler--sitemap) |
 | Mid | `index.md` loop | Canonicalize `/index` → `/` | [§7](#7-crawler-scheduler--sitemap), [§17](#17-troubleshooting) |
 | Mid | Queue cycles | Frontier `enqueued_urls` / `enqueued_paths` | [§7](#7-crawler-scheduler--sitemap) |
 | Mid | Dynamic page spam | `updated_paths` — no second write same path per run | [§7](#7-crawler-scheduler--sitemap) |
-| Mid | Dashboard events | Clickable URLs in recent pages list | [§8](#8-crawl-dashboard--live-api) |
+| Mid | Dashboard events | Clickable URLs in recent pages list | [§8](#8-web-ui--live-api) |
 | Mid | YAML config | `config.yaml` + yayaya; `.env` secrets only | [§6](#6-what-is-built-today), [§11](#11-myskin-api-contract) |
 | Late | Sitemap crawl | `sitemap_index.xml` + `<lastmod>` vs `last_changed_at` | [§7](#7-crawler-scheduler--sitemap), [§13](#13-target-site-edugovcz) |
-| Late | Dashboard facelift | Grouped stats; `discovered` = sitemap URL count; `sitemap_skipped` | [§8](#8-crawl-dashboard--live-api) |
-| Late | Chart animation | Tried push/animate patterns; **shipped with `animation: false`** | [§8](#8-crawl-dashboard--live-api) |
+| Late | Dashboard facelift | Grouped stats; `discovered` = sitemap URL count; `sitemap_skipped` | [§8](#8-web-ui--live-api) |
+| Late | Chart animation | Tried push/animate patterns; **shipped with `animation: false`** | [§8](#8-web-ui--live-api) |
 | Late | Multi-KB question | One myskin = one catalog; multiple RAGFlow KBs need design | [§10](#10-ragflow-rest-api-connector-spec) |
 
 ### Reference: prior art

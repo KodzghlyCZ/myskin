@@ -25,7 +25,7 @@ class SiteService:
         elif sites:
             logger.info("Seeded site registry from config.yaml (%d site(s))", len(sites))
         else:
-            logger.info("Site registry empty — add sites via /admin or /api/sites")
+            logger.info("Site registry empty — add sites via / or /api/sites")
         return sites
 
     def list_sites(self, *, enabled_only: bool = False) -> list[SiteRecord]:
