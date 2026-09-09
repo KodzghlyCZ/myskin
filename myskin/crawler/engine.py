@@ -20,7 +20,6 @@ from myskin.crawler.urls import (
     ParsedUrl,
     content_hash,
     is_css_url,
-    is_in_scope,
     is_pdf_url,
     normalize_url,
     url_to_relative_path,
@@ -130,7 +129,7 @@ class CrawlEngine:
                     item = queue.popleft()
 
                     parsed = normalize_url(item.url)
-                    if not parsed or not is_in_scope(parsed, seed):
+                    if not parsed or not self.settings.allows_url(parsed, seed):
                         continue
 
                     if robots and not robots.allowed(parsed.normalized):
@@ -151,7 +150,7 @@ class CrawlEngine:
                         discovered = self._process_page(
                             parsed, seed, item.depth, fetcher, stats, frontier
                         )
-                        if not self.settings.sitemap_url and not self.settings.local_sitemap_path:
+                        if not self.settings.sitemap_urls and not self.settings.local_sitemap_path:
                             stats.discovered += discovered
 
                     if self.progress:
@@ -197,13 +196,19 @@ class CrawlEngine:
                 return frontier.queue, frontier, None
             return frontier.queue, frontier, info
 
-        if self.settings.sitemap_url:
-            entries = load_sitemap_entries(fetcher, self.settings.sitemap_url, seed)
+        if self.settings.sitemap_urls:
+            entries = load_sitemap_entries(
+                fetcher,
+                self.settings.sitemap_urls,
+                seed,
+                url_pattern=self.settings.url_pattern,
+            )
             queued, skipped = self._enqueue_sitemap_entries(frontier, seed, entries)
             info = SitemapQueueInfo(total=len(entries), queued=queued, skipped=skipped)
+            sitemap_label = ", ".join(self.settings.sitemap_urls)
             logger.info(
                 "Sitemap %s: %d URLs, %d queued, %d skipped (unchanged)",
-                self.settings.sitemap_url,
+                sitemap_label,
                 info.total,
                 info.queued,
                 info.skipped,
@@ -213,7 +218,7 @@ class CrawlEngine:
             if not entries:
                 logger.warning(
                     "No sitemap entries from %s, falling back to link crawl",
-                    self.settings.sitemap_url,
+                    sitemap_label,
                 )
                 self._enqueue_link_crawl(frontier, seed)
                 return frontier.queue, frontier, None
@@ -234,7 +239,7 @@ class CrawlEngine:
         skipped = 0
         for entry in entries:
             parsed = normalize_url(entry.url)
-            if not parsed or not is_in_scope(parsed, seed):
+            if not parsed or not self.settings.allows_url(parsed, seed):
                 continue
             if is_css_url(parsed.normalized):
                 continue
@@ -271,7 +276,7 @@ class CrawlEngine:
         if self.settings.refresh_known:
             for record in self.state.list_resources():
                 parsed = normalize_url(record.url)
-                if not parsed or not is_in_scope(parsed, seed):
+                if not parsed or not self.settings.allows_url(parsed, seed):
                     continue
                 if is_css_url(parsed.normalized):
                     continue
@@ -447,7 +452,7 @@ class CrawlEngine:
         depth: int,
     ) -> int:
         link_parsed = normalize_url(link)
-        if not link_parsed or not is_in_scope(link_parsed, seed):
+        if not link_parsed or not self.settings.allows_url(link_parsed, seed):
             return 0
         if is_css_url(link_parsed.normalized):
             return 0

@@ -115,12 +115,33 @@ def url_to_relative_path(
     return rel.as_posix()
 
 
-def is_in_scope(url: ParsedUrl, seed: ParsedUrl) -> bool:
-    if url.host != seed.host:
+def same_host(url: ParsedUrl, seed: ParsedUrl) -> bool:
+    return url.host == seed.host
+
+
+def is_in_scope(
+    url: ParsedUrl,
+    seed: ParsedUrl,
+    url_pattern: re.Pattern[str] | None = None,
+) -> bool:
+    """True when `url` may be crawled for this seed.
+
+    Always requires the same host. Seed path is a prefix filter when it is
+    not `/`. Optional `url_pattern` further restricts pages (matched against
+    the normalized URL, then the path) so a prefix like `^/docs/` or
+    `^https://example.com/docs/` both work.
+    """
+    if not same_host(url, seed):
         return False
-    if seed.path in ("", "/"):
+    if seed.path not in ("", "/"):
+        prefix = seed.path.rstrip("/") + "/"
+        if url.path != seed.path and not url.path.startswith(prefix):
+            return False
+    if url_pattern is None:
         return True
-    return url.path == seed.path or url.path.startswith(seed.path.rstrip("/") + "/")
+    if url_pattern.search(url.normalized):
+        return True
+    return url_pattern.search(url.path) is not None
 
 
 def slugify_segment(segment: str) -> str:

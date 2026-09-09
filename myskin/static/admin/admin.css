@@ -115,7 +115,7 @@ h1 { font-size: 1.05rem; }
   font-size: 0.85rem;
 }
 
-input, button, .link-button {
+input, textarea, button, .link-button {
   font: inherit;
   border-radius: 6px;
   border: 1px solid var(--border);
@@ -510,6 +510,15 @@ button:disabled { cursor: not-allowed; opacity: 0.6; }
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
   gap: 0.75rem;
+}
+
+.field-span {
+  grid-column: 1 / -1;
+}
+
+textarea {
+  resize: vertical;
+  min-height: 4.2rem;
 }
 
 .config-form label {

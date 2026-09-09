@@ -2,12 +2,14 @@ from __future__ import annotations
 
 import logging
 import xml.etree.ElementTree as ET
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
+from re import Pattern
 
 from myskin.crawler.fetch import Fetcher
-from myskin.crawler.urls import ParsedUrl, is_in_scope, normalize_url
+from myskin.crawler.urls import ParsedUrl, is_in_scope, normalize_url, same_host
 
 logger = logging.getLogger(__name__)
 
@@ -92,13 +94,24 @@ def load_local_sitemap_file(path: Path) -> list[SitemapEntry]:
 
 def load_sitemap_entries(
     fetcher: Fetcher,
-    sitemap_url: str,
+    sitemap_urls: str | Sequence[str],
     seed: ParsedUrl,
     *,
     max_depth: int = 3,
+    url_pattern: Pattern[str] | None = None,
 ) -> list[SitemapEntry]:
+    urls = (sitemap_urls,) if isinstance(sitemap_urls, str) else tuple(sitemap_urls)
     merged: dict[str, datetime | None] = {}
-    _collect_sitemap(fetcher, sitemap_url, seed, merged, depth=0, max_depth=max_depth)
+    for sitemap_url in urls:
+        _collect_sitemap(
+            fetcher,
+            sitemap_url,
+            seed,
+            merged,
+            depth=0,
+            max_depth=max_depth,
+            url_pattern=url_pattern,
+        )
     return [SitemapEntry(url=url, lastmod=lastmod) for url, lastmod in sorted(merged.items())]
 
 
@@ -110,13 +123,14 @@ def _collect_sitemap(
     *,
     depth: int,
     max_depth: int,
+    url_pattern: Pattern[str] | None = None,
 ) -> None:
     if depth > max_depth:
         logger.warning("Sitemap recursion limit reached at %s", sitemap_url)
         return
 
     parsed = normalize_url(sitemap_url)
-    if not parsed or not is_in_scope(parsed, seed):
+    if not parsed or not same_host(parsed, seed):
         return
 
     try:
@@ -137,7 +151,7 @@ def _collect_sitemap(
 
     for entry in entries:
         page = normalize_url(entry.url)
-        if not page or not is_in_scope(page, seed):
+        if not page or not is_in_scope(page, seed, url_pattern=url_pattern):
             continue
         url = page.normalized
         existing = merged.get(url)
@@ -145,7 +159,15 @@ def _collect_sitemap(
             merged[url] = entry.lastmod
 
     for child_url in children:
-        _collect_sitemap(fetcher, child_url, seed, merged, depth=depth + 1, max_depth=max_depth)
+        _collect_sitemap(
+            fetcher,
+            child_url,
+            seed,
+            merged,
+            depth=depth + 1,
+            max_depth=max_depth,
+            url_pattern=url_pattern,
+        )
 
 
 def _is_newer(candidate: datetime | None, current: datetime | None) -> bool:

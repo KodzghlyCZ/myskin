@@ -99,6 +99,18 @@ function asArrayCsv(value) {
   return value || "";
 }
 
+function asArrayLines(value) {
+  if (Array.isArray(value)) return value.join("\n");
+  return value || "";
+}
+
+function parseLines(value) {
+  return String(value || "")
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+}
+
 function setFormValue(form, name, value) {
   const input = form.elements.namedItem(name);
   if (!input) return;
@@ -213,9 +225,14 @@ function fillEditForm(site) {
   setFormValue(editForm, "enabled", site.enabled);
 
   setFormValue(editForm, "crawler.seed_url", site.crawler?.seed_url);
-  setFormValue(editForm, "crawler.sitemap_url", site.crawler?.sitemap_url);
+  setFormValue(
+    editForm,
+    "crawler.sitemap_url",
+    asArrayLines(site.crawler?.sitemap_url || site.crawler?.sitemap_urls),
+  );
   setFormValue(editForm, "crawler.local_sitemap", site.crawler?.local_sitemap);
   setFormValue(editForm, "crawler.local_sitemap_requeue", site.crawler?.local_sitemap_requeue);
+  setFormValue(editForm, "crawler.url_regex", site.crawler?.url_regex);
   setFormValue(editForm, "crawler.max_depth", site.crawler?.max_depth);
   setFormValue(editForm, "crawler.max_pages", site.crawler?.max_pages);
   setFormValue(editForm, "crawler.request_delay", site.crawler?.request_delay);
@@ -252,15 +269,17 @@ function fillEditForm(site) {
 
 function buildSiteUpdatePayload() {
   const extensionsRaw = getFormValue(editForm, "crawler.passthrough.extensions");
+  const sitemapUrls = parseLines(getFormValue(editForm, "crawler.sitemap_url"));
   return {
     name: getFormValue(editForm, "name"),
     public_base_url: getFormValue(editForm, "public_base_url"),
     enabled: getFormValue(editForm, "enabled"),
     crawler: {
       seed_url: getFormValue(editForm, "crawler.seed_url"),
-      sitemap_url: getFormValue(editForm, "crawler.sitemap_url") || null,
+      sitemap_url: sitemapUrls.length === 0 ? null : sitemapUrls.length === 1 ? sitemapUrls[0] : sitemapUrls,
       local_sitemap: getFormValue(editForm, "crawler.local_sitemap") || null,
       local_sitemap_requeue: getFormValue(editForm, "crawler.local_sitemap_requeue") || "always",
+      url_regex: getFormValue(editForm, "crawler.url_regex") || null,
       max_depth: normalizeNumber(getFormValue(editForm, "crawler.max_depth"), { integer: true }),
       max_pages: normalizeNumber(getFormValue(editForm, "crawler.max_pages"), { integer: true }),
       request_delay: normalizeNumber(getFormValue(editForm, "crawler.request_delay")),

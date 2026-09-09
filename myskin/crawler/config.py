@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -26,6 +27,37 @@ def _mapping_get(data: dict[str, Any], key: str, default: Any = None) -> Any:
     return data[key]
 
 
+def _mapping_url_list(data: dict[str, Any], *keys: str) -> tuple[str, ...]:
+    """Accept a string, newline-separated string, or list under any of `keys`."""
+    seen: set[str] = set()
+    ordered: list[str] = []
+    for key in keys:
+        raw = _mapping_get(data, key)
+        if raw is None:
+            continue
+        if isinstance(raw, str):
+            items = [part.strip() for part in raw.splitlines() if part.strip()]
+        elif isinstance(raw, (list, tuple)):
+            items = [str(part).strip() for part in raw if str(part).strip()]
+        else:
+            continue
+        for item in items:
+            if item not in seen:
+                seen.add(item)
+                ordered.append(item)
+    return tuple(ordered)
+
+
+def _compile_url_pattern(raw: Any) -> re.Pattern[str] | None:
+    text = str(raw).strip() if raw else ""
+    if not text:
+        return None
+    try:
+        return re.compile(text)
+    except re.error as exc:
+        raise ValueError(f"Invalid crawler.url_regex: {exc}") from exc
+
+
 class CrawlSettings:
     def __init__(
         self,
@@ -40,10 +72,11 @@ class CrawlSettings:
         refresh_known: bool,
         resume_on_startup: bool,
         progress: str,
-        sitemap_url: str | None,
+        sitemap_urls: tuple[str, ...],
         local_sitemap_path: Path | None,
         local_sitemap_requeue_always: bool,
         sitemap_only: bool,
+        url_pattern: re.Pattern[str] | None,
         follow_file_links: bool,
         html_to_markdown: bool,
         passthrough_enabled: bool,
@@ -61,16 +94,21 @@ class CrawlSettings:
         self.refresh_known = refresh_known
         self.resume_on_startup = resume_on_startup
         self.progress = progress
-        self.sitemap_url = sitemap_url
+        self.sitemap_urls = sitemap_urls
         self.local_sitemap_path = local_sitemap_path
         self.local_sitemap_requeue_always = local_sitemap_requeue_always
         self.sitemap_only = sitemap_only
+        self.url_pattern = url_pattern
         self.follow_file_links = follow_file_links
         self.html_to_markdown = html_to_markdown
         self.passthrough_enabled = passthrough_enabled
         self.passthrough_extensions = passthrough_extensions
         self.extract_pdf_text = extract_pdf_text
         self._data_dir = data_dir
+
+    @property
+    def sitemap_url(self) -> str | None:
+        return self.sitemap_urls[0] if self.sitemap_urls else None
 
     @classmethod
     def from_mapping(
@@ -84,9 +122,10 @@ class CrawlSettings:
         if not isinstance(passthrough, dict):
             passthrough = {}
 
-        sitemap_url = _mapping_get(data, "sitemap_url")
+        sitemap_urls = _mapping_url_list(data, "sitemap_url", "sitemap_urls")
         local_sitemap = _mapping_get(data, "local_sitemap")
         requeue = str(_mapping_get(data, "local_sitemap_requeue", "always")).strip().lower()
+        url_pattern = _compile_url_pattern(_mapping_get(data, "url_regex"))
 
         resolved_data_dir = data_dir
         if resolved_data_dir is None:
@@ -117,10 +156,11 @@ class CrawlSettings:
             refresh_known=_mapping_bool(data, "refresh_known", True),
             resume_on_startup=_mapping_bool(data, "resume_on_startup", True),
             progress=str(_mapping_get(data, "progress", "auto")).strip().lower(),
-            sitemap_url=str(sitemap_url).strip() if sitemap_url else None,
+            sitemap_urls=sitemap_urls,
             local_sitemap_path=Path(str(local_sitemap).strip()) if local_sitemap else None,
             local_sitemap_requeue_always=requeue in {"always", "all", "true", "yes", "1"},
             sitemap_only=_mapping_bool(data, "sitemap_only", True),
+            url_pattern=url_pattern,
             follow_file_links=_mapping_bool(data, "follow_file_links", True),
             html_to_markdown=_mapping_bool(data, "html_to_markdown", True),
             passthrough_enabled=_mapping_bool(passthrough, "enabled", True),
@@ -146,9 +186,11 @@ class CrawlSettings:
             "refresh_known",
             "resume_on_startup",
             "sitemap_url",
+            "sitemap_urls",
             "local_sitemap",
             "local_sitemap_requeue",
             "sitemap_only",
+            "url_regex",
             "follow_file_links",
             "progress",
             "html_to_markdown",
@@ -179,6 +221,11 @@ class CrawlSettings:
     @property
     def data_dir(self) -> Path:
         return self._data_dir
+
+    def allows_url(self, url: Any, seed: Any) -> bool:
+        from myskin.crawler.urls import is_in_scope
+
+        return is_in_scope(url, seed, url_pattern=self.url_pattern)
 
     def should_passthrough(self, url: str, content_type: str = "") -> bool:
         if not self.passthrough_enabled:

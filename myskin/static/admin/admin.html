@@ -137,8 +137,11 @@
                     <label>Seed URL
                       <input name="crawler.seed_url" type="url" required />
                     </label>
-                    <label>Sitemap URL
-                      <input name="crawler.sitemap_url" type="url" />
+                    <label class="field-span">Sitemap URLs
+                      <textarea name="crawler.sitemap_url" rows="3" placeholder="https://example.com/sitemap.xml"></textarea>
+                    </label>
+                    <label class="field-span">URL match regex
+                      <input name="crawler.url_regex" placeholder="^https://example.com/docs/" />
                     </label>
                     <label>Local sitemap path
                       <input name="crawler.local_sitemap" />
