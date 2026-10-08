@@ -5,6 +5,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from bs4 import BeautifulSoup
+
 from myskin.config import settings as app_settings
 from myskin.formats import DEFAULT_PASSTHROUGH_EXTENSIONS, normalize_extension
 from myskin.settings_loader import cfg_bool, cfg_get, cfg_optional, cfg_path, ensure_config_loaded
@@ -48,14 +50,72 @@ def _mapping_url_list(data: dict[str, Any], *keys: str) -> tuple[str, ...]:
     return tuple(ordered)
 
 
-def _compile_url_pattern(raw: Any) -> re.Pattern[str] | None:
+def _compile_url_pattern(raw: Any, *, label: str = "crawler.url_regex") -> re.Pattern[str] | None:
     text = str(raw).strip() if raw else ""
     if not text:
         return None
     try:
         return re.compile(text)
     except re.error as exc:
-        raise ValueError(f"Invalid crawler.url_regex: {exc}") from exc
+        raise ValueError(f"Invalid {label}: {exc}") from exc
+
+
+def _check_css(selector: str, label: str) -> str:
+    text = selector.strip()
+    if not text:
+        raise ValueError(f"Empty {label}")
+    try:
+        BeautifulSoup("", "html.parser").select(text)
+    except Exception as exc:
+        raise ValueError(f"Invalid {label} {text!r}: {exc}") from exc
+    return text
+
+
+@dataclass(frozen=True)
+class ContentRule:
+    """Keep one region of an HTML page and drop chrome inside it.
+
+    `url_pattern` matches the full URL or the path. A rule without one applies
+    to every page. The first matching rule wins.
+    """
+
+    url_pattern: re.Pattern[str] | None
+    select: str | None
+    remove: tuple[str, ...]
+
+
+def _content_rules(raw: Any) -> tuple[ContentRule, ...]:
+    if raw is None or raw == "":
+        return ()
+    if isinstance(raw, dict):
+        raw = [raw]
+    if not isinstance(raw, list):
+        raise ValueError("crawler.content_rules must be a list")
+    rules: list[ContentRule] = []
+    for index, item in enumerate(raw):
+        label = f"crawler.content_rules[{index}]"
+        if not isinstance(item, dict):
+            raise ValueError(f"{label} must be a mapping")
+        select_raw = item.get("select")
+        select = _check_css(str(select_raw), f"{label}.select") if select_raw else None
+        remove_raw = item.get("remove") or []
+        if isinstance(remove_raw, str):
+            remove_items = [part.strip() for part in remove_raw.splitlines() if part.strip()]
+        elif isinstance(remove_raw, (list, tuple)):
+            remove_items = [str(part).strip() for part in remove_raw if str(part).strip()]
+        else:
+            raise ValueError(f"{label}.remove must be a list of CSS selectors")
+        remove = tuple(_check_css(part, f"{label}.remove") for part in remove_items)
+        if select is None and not remove:
+            raise ValueError(f"{label} needs select or remove")
+        rules.append(
+            ContentRule(
+                url_pattern=_compile_url_pattern(item.get("url_regex"), label=f"{label}.url_regex"),
+                select=select,
+                remove=remove,
+            )
+        )
+    return tuple(rules)
 
 
 class CrawlSettings:
@@ -83,6 +143,7 @@ class CrawlSettings:
         passthrough_extensions: frozenset[str],
         extract_pdf_text: bool,
         data_dir: Path,
+        content_rules: tuple[ContentRule, ...] = (),
     ) -> None:
         self.seed_url = seed_url
         self.max_depth = max_depth
@@ -104,6 +165,7 @@ class CrawlSettings:
         self.passthrough_enabled = passthrough_enabled
         self.passthrough_extensions = passthrough_extensions
         self.extract_pdf_text = extract_pdf_text
+        self.content_rules = content_rules
         self._data_dir = data_dir
 
     @property
@@ -169,6 +231,7 @@ class CrawlSettings:
             ),
             extract_pdf_text=_mapping_bool(passthrough, "extract_pdf_text", False),
             data_dir=resolved_data_dir,
+            content_rules=_content_rules(data.get("content_rules")),
         )
 
     @classmethod
@@ -195,6 +258,7 @@ class CrawlSettings:
             "progress",
             "html_to_markdown",
             "passthrough",
+            "content_rules",
         ):
             value = cfg_optional(f"crawler.{key}")
             if value is not None:

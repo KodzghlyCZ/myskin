@@ -3,11 +3,13 @@ from __future__ import annotations
 import io
 import logging
 from dataclasses import dataclass
+from urllib.parse import urlparse
 
 import html2text
-from bs4 import BeautifulSoup
+from bs4 import BeautifulSoup, Tag
 from pypdf import PdfReader
 
+from myskin.crawler.config import ContentRule
 from myskin.crawler.urls import ParsedUrl, is_passthrough_url, normalize_url
 from myskin.formats import DEFAULT_PASSTHROUGH_EXTENSIONS
 
@@ -34,11 +36,49 @@ def html_to_markdown(html: str) -> str:
     return converter.handle(html).strip()
 
 
+def _default_region(soup: BeautifulSoup) -> Tag:
+    found = soup.find("main") or soup.find("article") or soup.body
+    return found if isinstance(found, Tag) else soup
+
+
+def _rule_matches(rule: ContentRule, page_url: str) -> bool:
+    if rule.url_pattern is None:
+        return True
+    path = urlparse(page_url).path or "/"
+    return bool(rule.url_pattern.search(page_url) or rule.url_pattern.search(path))
+
+
+def _content_region(
+    soup: BeautifulSoup, page_url: str, rules: tuple[ContentRule, ...]
+) -> tuple[Tag | None, bool]:
+    """Return the node to convert, and whether a content rule applied.
+
+    With no matching rule the page keeps the old main/article/body fallback.
+    A matching rule that names `select` and finds nothing is skipped, so a
+    chrome-only archive is not stored as the document.
+    """
+    rule = next((item for item in rules if _rule_matches(item, page_url)), None)
+    if rule is None:
+        return _default_region(soup), False
+    if rule.select:
+        found = soup.select_one(rule.select)
+        if not isinstance(found, Tag):
+            return None, True
+        region: Tag | None = found
+    else:
+        region = _default_region(soup)
+    for selector in rule.remove:
+        for tag in list(region.select(selector)):
+            tag.decompose()
+    return region, True
+
+
 def extract_page(
     html: bytes,
     page_url: str,
     *,
     passthrough_extensions: frozenset[str] = DEFAULT_PASSTHROUGH_EXTENSIONS,
+    content_rules: tuple[ContentRule, ...] = (),
 ) -> PageExtract:
     soup = BeautifulSoup(html, "html.parser")
 
@@ -53,14 +93,15 @@ def extract_page(
         if h1:
             title = h1.get_text(" ", strip=True)
 
-    main = soup.find("main") or soup.find("article") or soup.body or soup
-    markdown = html_to_markdown(str(main))
+    region, narrowed = _content_region(soup, page_url, content_rules)
+    markdown = html_to_markdown(str(region)) if region is not None else ""
+    link_root: Tag | BeautifulSoup | None = region if narrowed else soup
 
     page_links: list[str] = []
     file_links: list[str] = []
     seen: set[str] = set()
 
-    for tag in soup.find_all(["a", "link"]):
+    for tag in link_root.find_all(["a", "link"]) if link_root is not None else []:
         for attr in _LINK_ATTRS:
             href = tag.get(attr)
             if not href:

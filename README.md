@@ -71,6 +71,7 @@ One instance can manage **multiple sites**, each with its own crawl config, sche
 | `crawler.sitemap_only` | `true` | Only crawl sitemap URLs; skip following page `<a>` links |
 | `crawler.follow_file_links` | `true` | In sitemap mode, still queue PDF/DOC/etc. links found on crawled pages |
 | `crawler.html_to_markdown` | `true` | Convert HTML pages to markdown (RAGFlow cannot ingest HTML) |
+| `crawler.content_rules` | — | List of page-region rules. Each rule may set `url_regex` (full URL or path; first match wins), `select` (CSS, first match), and `remove` (CSS nodes dropped inside that region). A `select` that matches nothing skips the page. With no matching rule, extraction still uses `main`, then `article`, then `body`. |
 | `crawler.passthrough.enabled` | `true` | Store PDF/DOC/DOCX/etc. as native binaries for RAGFlow DeepDoc |
 | `crawler.passthrough.extract_pdf_text` | `false` | Legacy: extract PDF text to `.md` instead of passthrough |
 | `api.public_base_url` | — | **Required** — base URL for `file_url` in catalog (`/api/files/{id}`) |

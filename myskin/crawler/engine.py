@@ -389,6 +389,7 @@ class CrawlEngine:
                 result.content,
                 parsed.normalized,
                 passthrough_extensions=self.settings.passthrough_extensions,
+                content_rules=self.settings.content_rules,
             )
         except Exception as exc:
             stats.pages_failed += 1

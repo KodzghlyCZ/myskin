@@ -143,6 +143,9 @@
                     <label class="field-span">URL match regex
                       <input name="crawler.url_regex" placeholder="^https://example.com/docs/" />
                     </label>
+                    <label class="field-span">Content rules
+                      <textarea name="crawler.content_rules" rows="8" placeholder='[{"select":"main, article","remove":["header","nav","footer",".bde-header-builder"]}]'></textarea>
+                    </label>
                     <label>Local sitemap path
                       <input name="crawler.local_sitemap" />
                     </label>

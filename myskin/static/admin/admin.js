@@ -111,6 +111,21 @@ function parseLines(value) {
     .filter(Boolean);
 }
 
+function parseContentRules(value) {
+  const text = String(value || "").trim();
+  if (!text) return null;
+  let parsed;
+  try {
+    parsed = JSON.parse(text);
+  } catch (error) {
+    throw new Error("Content rules must be JSON");
+  }
+  if (!Array.isArray(parsed)) {
+    throw new Error("Content rules must be a JSON list");
+  }
+  return parsed;
+}
+
 function setFormValue(form, name, value) {
   const input = form.elements.namedItem(name);
   if (!input) return;
@@ -233,6 +248,11 @@ function fillEditForm(site) {
   setFormValue(editForm, "crawler.local_sitemap", site.crawler?.local_sitemap);
   setFormValue(editForm, "crawler.local_sitemap_requeue", site.crawler?.local_sitemap_requeue);
   setFormValue(editForm, "crawler.url_regex", site.crawler?.url_regex);
+  setFormValue(
+    editForm,
+    "crawler.content_rules",
+    site.crawler?.content_rules ? JSON.stringify(site.crawler.content_rules, null, 2) : "",
+  );
   setFormValue(editForm, "crawler.max_depth", site.crawler?.max_depth);
   setFormValue(editForm, "crawler.max_pages", site.crawler?.max_pages);
   setFormValue(editForm, "crawler.request_delay", site.crawler?.request_delay);
@@ -280,6 +300,7 @@ function buildSiteUpdatePayload() {
       local_sitemap: getFormValue(editForm, "crawler.local_sitemap") || null,
       local_sitemap_requeue: getFormValue(editForm, "crawler.local_sitemap_requeue") || "always",
       url_regex: getFormValue(editForm, "crawler.url_regex") || null,
+      content_rules: parseContentRules(getFormValue(editForm, "crawler.content_rules")),
       max_depth: normalizeNumber(getFormValue(editForm, "crawler.max_depth"), { integer: true }),
       max_pages: normalizeNumber(getFormValue(editForm, "crawler.max_pages"), { integer: true }),
       request_delay: normalizeNumber(getFormValue(editForm, "crawler.request_delay")),
@@ -810,7 +831,13 @@ editForm.addEventListener("submit", async (event) => {
   event.preventDefault();
   const siteId = getFormValue(editForm, "site_id");
   if (!siteId) return;
-  const body = buildSiteUpdatePayload();
+  let body;
+  try {
+    body = buildSiteUpdatePayload();
+  } catch (error) {
+    setStatus(error.message, "error");
+    return;
+  }
   try {
     await api(`/api/sites/${siteId}`, {
       method: "PUT",

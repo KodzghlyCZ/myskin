@@ -201,6 +201,7 @@ class SiteRegistry:
             "progress",
             "html_to_markdown",
             "passthrough",
+            "content_rules",
         ):
             value = cfg_optional(f"crawler.{key}")
             if value is not None:
