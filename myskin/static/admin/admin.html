@@ -15,13 +15,13 @@
 <body>
   <div class="app">
     <header class="topbar">
-      <div class="brand">
+      <a class="brand" href="/">
         <img src="/static/brand/myskin-logo.png" alt="" class="logo" width="36" height="36" />
         <div>
           <h1>myskin</h1>
           <p class="subtitle">Crawlers → RAGFlow</p>
         </div>
-      </div>
+      </a>
 
       <div class="top-summary" id="summary" aria-live="polite">
         <span class="summary-chip"><span class="summary-label">Sites</span> <strong id="summary-sites">0</strong></span>
@@ -50,23 +50,21 @@
     <div id="status" class="status" hidden></div>
 
     <div class="workspace">
-      <aside class="sidebar">
-        <div class="sidebar-header">
-          <h2>Crawlers</h2>
-          <button id="show-create" type="button" class="secondary" title="Add site">+</button>
-        </div>
-        <div id="sites" class="crawler-list" role="list"></div>
-      </aside>
+      <section id="page-landing" class="page page-landing">
+        <header class="page-header">
+          <div>
+            <h2>Crawlers</h2>
+            <p class="muted">Each crawler is one site. Open it for the live run, or its configuration page for settings.</p>
+          </div>
+          <button id="show-create" type="button">New crawler</button>
+        </header>
+        <div id="sites" class="project-list" role="list"></div>
+      </section>
 
-      <section class="detail" id="detail">
-        <div id="empty-detail" class="empty-detail">
-          <h2>Select a crawler</h2>
-          <p>Choose a site from the list to view live runs, charts, and configuration.</p>
-        </div>
-
-        <div id="detail-content" class="detail-content" hidden>
+      <section class="page page-crawler" id="detail-content" hidden>
           <header class="detail-header">
             <div class="detail-title">
+              <button type="button" class="crumb" id="back-to-list">Crawlers</button>
               <h2 id="detail-name">—</h2>
               <div class="detail-meta">
                 <span id="detail-id" class="muted"></span>
@@ -78,13 +76,13 @@
               <button type="button" data-action="crawl" id="btn-crawl">Run crawl</button>
               <button type="button" class="secondary" data-action="sync" id="btn-sync">RAGFlow sync</button>
               <button type="button" class="secondary" data-action="toggle" id="btn-toggle">Disable</button>
+              <button type="button" class="secondary" id="open-config">Configuration</button>
             </div>
           </header>
 
           <nav class="tabs" role="tablist" aria-label="Crawler sections">
             <button type="button" class="tab active" role="tab" data-tab="live" aria-selected="true">Live</button>
             <button type="button" class="tab" role="tab" data-tab="charts" aria-selected="false">Charts</button>
-            <button type="button" class="tab" role="tab" data-tab="config" aria-selected="false">Config</button>
           </nav>
 
           <div class="tab-panels">
@@ -108,7 +106,18 @@
               </div>
             </div>
 
-            <div id="panel-config" class="tab-panel" role="tabpanel" hidden>
+          </div>
+        </section>
+
+        <section id="page-config" class="page page-config" hidden>
+          <header class="detail-header">
+            <div class="detail-title">
+              <button type="button" class="crumb" id="back-to-crawler">Back to crawler</button>
+              <h2>Configuration</h2>
+              <p class="muted" id="config-site-label"></p>
+            </div>
+          </header>
+          <div class="config-scroll">
               <form id="edit-form" class="config-form">
                 <input type="hidden" name="site_id" />
 
@@ -264,17 +273,16 @@
                   <button id="delete-site" type="button" class="danger">Delete site</button>
                 </div>
               </form>
-            </div>
           </div>
-        </div>
+        </section>
 
-        <div id="create-panel" class="create-panel" hidden>
+        <section id="create-panel" class="page page-create" hidden>
           <header class="detail-header">
             <div class="detail-title">
-              <h2>Add site</h2>
-              <p class="muted">Create a new crawler. Fine-tune settings afterward in Config.</p>
+              <button type="button" class="crumb" id="cancel-create">Crawlers</button>
+              <h2>New crawler</h2>
+              <p class="muted">Create the site, then adjust the rest on its configuration page.</p>
             </div>
-            <button type="button" class="secondary" id="cancel-create">Cancel</button>
           </header>
           <form id="create-form" class="config-form create-form">
             <div class="field-grid">
@@ -311,8 +319,7 @@
               <button type="submit">Create site</button>
             </div>
           </form>
-        </div>
-      </section>
+        </section>
     </div>
   </div>
 

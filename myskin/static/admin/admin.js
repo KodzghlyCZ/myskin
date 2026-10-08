@@ -6,9 +6,12 @@ const sitesEl = document.getElementById("sites");
 const createForm = document.getElementById("create-form");
 const editForm = document.getElementById("edit-form");
 const deleteSiteButton = document.getElementById("delete-site");
-const emptyDetailEl = document.getElementById("empty-detail");
+const landingEl = document.getElementById("page-landing");
 const detailContentEl = document.getElementById("detail-content");
+const configPageEl = document.getElementById("page-config");
+const configSiteLabelEl = document.getElementById("config-site-label");
 const createPanelEl = document.getElementById("create-panel");
+const workspaceEl = document.querySelector(".workspace");
 const detailNameEl = document.getElementById("detail-name");
 const detailIdEl = document.getElementById("detail-id");
 const statePill = document.getElementById("statePill");
@@ -38,6 +41,7 @@ let oidcEnabled = false;
 let lastLiveData = null;
 let chartBfsMode = false;
 let activeTab = "live";
+let currentView = "landing";
 
 function token() {
   return localStorage.getItem(TOKEN_KEY) || "";
@@ -166,66 +170,91 @@ function updateSummary(sites) {
   summaryDocumentsEl.textContent = String(documents);
 }
 
-function updateUrl(siteId) {
+function formatRelative(value) {
+  if (!value) return "No crawl yet";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return String(value);
+  const minutes = Math.round((date.getTime() - Date.now()) / 60000);
+  const rtf = new Intl.RelativeTimeFormat(undefined, { numeric: "auto" });
+  if (Math.abs(minutes) < 60) return rtf.format(minutes, "minute");
+  const hours = Math.round(minutes / 60);
+  if (Math.abs(hours) < 36) return rtf.format(hours, "hour");
+  return rtf.format(Math.round(hours / 24), "day");
+}
+
+function siteInitials(name) {
+  const parts = String(name || "?").trim().split(/\s+/).filter(Boolean);
+  const letters = (parts[0]?.[0] || "?") + (parts[1]?.[0] || "");
+  return letters.toUpperCase();
+}
+
+function writeUrl(siteId, view, { replace = false } = {}) {
   const url = new URL(window.location.href);
   if (siteId) url.searchParams.set("site_id", siteId);
   else url.searchParams.delete("site_id");
-  window.history.replaceState({}, "", url);
+  if (view && view !== "crawler" && view !== "landing") url.searchParams.set("view", view);
+  else url.searchParams.delete("view");
+  const state = { siteId: siteId || null, view: view || (siteId ? "crawler" : "landing") };
+  if (replace) window.history.replaceState(state, "", url);
+  else window.history.pushState(state, "", url);
 }
 
-function showCreatePanel() {
-  selectedSiteId = null;
-  selectedDetail = null;
-  emptyDetailEl.hidden = true;
-  detailContentEl.hidden = true;
-  createPanelEl.hidden = false;
-  updateUrl(null);
+function applyView(view) {
+  currentView = view;
+  landingEl.hidden = view !== "landing";
+  detailContentEl.hidden = view !== "crawler";
+  configPageEl.hidden = view !== "config";
+  createPanelEl.hidden = view !== "create";
+  workspaceEl.classList.toggle("view-charts", view === "crawler" && activeTab === "charts");
+}
+
+function showLanding({ replace = false } = {}) {
+  applyView("landing");
+  writeUrl(null, "landing", { replace });
   renderCrawlerList();
 }
 
-function showEmptyDetail() {
-  emptyDetailEl.hidden = false;
-  detailContentEl.hidden = true;
-  createPanelEl.hidden = true;
-}
-
-function showDetailContent() {
-  emptyDetailEl.hidden = true;
-  detailContentEl.hidden = false;
-  createPanelEl.hidden = true;
+function showCreatePanel({ replace = false } = {}) {
+  applyView("create");
+  writeUrl(null, "create", { replace });
 }
 
 function renderCrawlerList() {
   sitesEl.innerHTML = "";
   if (!sitesCache.length) {
-    sitesEl.innerHTML = '<div class="empty-detail" style="padding:1rem"><p>No crawlers yet. Click + to add one.</p></div>';
+    sitesEl.innerHTML = '<div class="empty-detail"><h2>No crawlers yet</h2><p>Create one to start collecting pages.</p></div>';
     return;
   }
 
   for (const site of sitesCache) {
     const row = document.createElement("button");
     row.type = "button";
-    row.className = "crawler-row";
+    row.className = "project-row";
     row.setAttribute("role", "listitem");
-    if (site.site_id === selectedSiteId) row.classList.add("selected");
 
     const status = siteStatus(site);
-    const flags = [
-      site.enabled ? '<span class="badge on">enabled</span>' : '<span class="badge off">disabled</span>',
-      site.scheduler_enabled ? '<span class="badge accent">sched</span>' : "",
-      site.ragflow_enabled ? '<span class="badge on">ragflow</span>' : "",
-      `<span class="badge">${site.document_count || 0} docs</span>`,
-    ].filter(Boolean).join("");
+    const activity = site.last_crawl_finished_at
+      ? `Updated ${formatRelative(site.last_crawl_finished_at)}`
+      : site.next_run_at
+        ? `Next ${formatRelative(site.next_run_at)}`
+        : "No crawl yet";
+    const syncLabel = site.ragflow_enabled ? "RAGFlow on" : "RAGFlow off";
 
     row.innerHTML = `
-      <div class="crawler-row-top">
-        <div>
-          <h3>${escapeHtml(site.name)}</h3>
-          <div class="site-id">${escapeHtml(site.site_id)}</div>
-        </div>
+      <span class="project-avatar" aria-hidden="true">${escapeHtml(siteInitials(site.name))}</span>
+      <span class="project-main">
+        <span class="project-name">${escapeHtml(site.name)}</span>
+        <div class="project-path">${escapeHtml(site.site_id)}</div>
+        <div class="project-desc">${escapeHtml(site.seed_url || "")}</div>
+      </span>
+      <span class="project-side">
         <span class="pill ${status.className}">${status.label}</span>
-      </div>
-      <div class="crawler-flags">${flags}</div>
+        <span class="project-stats">
+          <span><strong>${site.document_count || 0}</strong> docs</span>
+          <span>${escapeHtml(syncLabel)}</span>
+        </span>
+        <span class="project-stats">${escapeHtml(activity)}</span>
+      </span>
     `;
     row.addEventListener("click", () => selectSite(site.site_id));
     sitesEl.appendChild(row);
@@ -345,6 +374,9 @@ function updateDetailHeader(summary, liveData) {
 
   detailNameEl.textContent = selectedDetail?.name || site.name;
   detailIdEl.textContent = site.site_id;
+  if (configSiteLabelEl) {
+    configSiteLabelEl.textContent = `${selectedDetail?.name || site.name} · ${site.site_id}`;
+  }
 
   const running = liveData?.running ?? site.crawl_running;
   if (running) {
@@ -714,19 +746,38 @@ function syncChart(live, bfsMode) {
   chartSampleLen = samples.length;
 }
 
-async function selectSite(siteId) {
+async function ensureSiteDetail(siteId) {
+  if (selectedDetail?.site_id === siteId) return selectedDetail;
+  selectedDetail = await api(`/api/sites/${siteId}`);
+  fillEditForm(selectedDetail);
+  return selectedDetail;
+}
+
+async function selectSite(siteId, { replace = false } = {}) {
   selectedSiteId = siteId;
-  updateUrl(siteId);
-  showDetailContent();
-  renderCrawlerList();
+  applyView("crawler");
+  writeUrl(siteId, "crawler", { replace });
+  if (activeTab !== "live" && activeTab !== "charts") setTab("live");
   resetChart();
   chartRunId = null;
 
   try {
-    selectedDetail = await api(`/api/sites/${siteId}`);
-    fillEditForm(selectedDetail);
+    await ensureSiteDetail(siteId);
     updateDetailHeader(sitesCache.find((s) => s.site_id === siteId), null);
     await refreshLive();
+    if (activeTab === "charts") chart.resize();
+  } catch (error) {
+    if (error.message !== "login_required") setStatus(error.message, "error");
+  }
+}
+
+async function openConfig(siteId, { replace = false } = {}) {
+  selectedSiteId = siteId;
+  applyView("config");
+  writeUrl(siteId, "config", { replace });
+  try {
+    await ensureSiteDetail(siteId);
+    updateDetailHeader(sitesCache.find((s) => s.site_id === siteId), lastLiveData);
   } catch (error) {
     if (error.message !== "login_required") setStatus(error.message, "error");
   }
@@ -738,14 +789,15 @@ async function loadSites() {
   updateSummary(sitesCache);
   renderCrawlerList();
 
+  if (currentView === "landing") renderCrawlerList();
+
   if (selectedSiteId) {
     const selected = sitesCache.find((site) => site.site_id === selectedSiteId);
     if (!selected) {
       selectedSiteId = null;
       selectedDetail = null;
-      showEmptyDetail();
-      updateUrl(null);
-    } else {
+      showLanding({ replace: true });
+    } else if (currentView === "crawler" || currentView === "config") {
       updateDetailHeader(selected, lastLiveData);
     }
   }
@@ -775,8 +827,9 @@ function setTab(tabName) {
     panel.hidden = !match;
     panel.classList.toggle("active", match);
   });
+  workspaceEl.classList.toggle("view-charts", currentView === "crawler" && tabName === "charts");
   if (tabName === "charts") {
-    chart.resize();
+    requestAnimationFrame(() => chart.resize());
   }
 }
 
@@ -785,16 +838,17 @@ document.querySelectorAll(".tab").forEach((tab) => {
 });
 
 document.getElementById("show-create").addEventListener("click", () => showCreatePanel());
-document.getElementById("cancel-create").addEventListener("click", () => {
-  createPanelEl.hidden = true;
-  if (selectedSiteId) {
-    showDetailContent();
-    updateUrl(selectedSiteId);
-  } else {
-    showEmptyDetail();
-    updateUrl(null);
-  }
-  renderCrawlerList();
+document.getElementById("cancel-create").addEventListener("click", () => showLanding());
+document.getElementById("back-to-list").addEventListener("click", () => showLanding());
+document.getElementById("open-config").addEventListener("click", () => {
+  if (selectedSiteId) openConfig(selectedSiteId);
+});
+document.getElementById("back-to-crawler").addEventListener("click", () => {
+  if (selectedSiteId) selectSite(selectedSiteId);
+});
+document.querySelector(".brand").addEventListener("click", (event) => {
+  event.preventDefault();
+  if (currentView !== "landing") showLanding();
 });
 
 document.getElementById("detail-actions").addEventListener("click", async (event) => {
@@ -863,9 +917,8 @@ deleteSiteButton.addEventListener("click", async () => {
     selectedSiteId = null;
     selectedDetail = null;
     lastLiveData = null;
-    showEmptyDetail();
-    updateUrl(null);
     await loadSites();
+    showLanding({ replace: true });
   } catch (error) {
     if (error.message !== "login_required") setStatus(error.message, "error");
   }
@@ -906,8 +959,7 @@ createForm.addEventListener("submit", async (event) => {
     createForm.reset();
     setStatus(`Created site ${body.site_id}`);
     await loadSites();
-    await selectSite(body.site_id);
-    setTab("config");
+    await openConfig(body.site_id, { replace: true });
   } catch (error) {
     if (error.message !== "login_required") setStatus(error.message, "error");
   }
@@ -970,6 +1022,25 @@ async function initAuth() {
   return true;
 }
 
+async function routeFromLocation({ replace = false } = {}) {
+  const params = new URLSearchParams(window.location.search);
+  const siteId = params.get("site_id");
+  const view = params.get("view");
+  if (view === "create") {
+    showCreatePanel({ replace });
+    return;
+  }
+  if (siteId && sitesCache.some((site) => site.site_id === siteId)) {
+    if (view === "config") await openConfig(siteId, { replace });
+    else {
+      await selectSite(siteId, { replace });
+      if (view === "charts") setTab("charts");
+    }
+    return;
+  }
+  showLanding({ replace });
+}
+
 (async () => {
   const ready = await initAuth();
   if (!ready) return;
@@ -980,14 +1051,19 @@ async function initAuth() {
     if (error.message !== "login_required") setStatus(error.message, "error");
   }
 
-  const params = new URLSearchParams(window.location.search);
-  const fromQuery = params.get("site_id");
-  if (fromQuery && sitesCache.some((s) => s.site_id === fromQuery)) {
-    await selectSite(fromQuery);
-  } else if (sitesCache.length === 1) {
-    await selectSite(sitesCache[0].site_id);
-  } else {
-    showEmptyDetail();
+  await routeFromLocation({ replace: true });
+
+  window.addEventListener("popstate", () => {
+    routeFromLocation({ replace: true }).catch((error) => {
+      if (error.message !== "login_required") setStatus(error.message, "error");
+    });
+  });
+
+  const chartWrap = document.querySelector(".chart-wrap");
+  if (chartWrap && window.ResizeObserver) {
+    new ResizeObserver(() => {
+      if (currentView === "crawler" && activeTab === "charts") chart.resize();
+    }).observe(chartWrap);
   }
 
   setInterval(() => {

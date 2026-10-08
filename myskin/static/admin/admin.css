@@ -10,7 +10,6 @@
   --ok: #6bcf7f;
   --warn: #e8b84a;
   --danger: #e86a6a;
-  --sidebar-w: 300px;
   font-family: "Segoe UI", system-ui, sans-serif;
 }
 
@@ -41,11 +40,13 @@ html, body {
   flex-wrap: wrap;
 }
 
-.brand {
+a.brand {
   display: flex;
   gap: 0.75rem;
   align-items: center;
   min-width: 0;
+  text-decoration: none;
+  color: inherit;
 }
 
 .logo {
@@ -162,93 +163,141 @@ button:disabled { cursor: not-allowed; opacity: 0.6; }
 .status.ok { background: #1d3a2a; color: #b4ffd4; }
 
 .workspace {
-  display: grid;
-  grid-template-columns: var(--sidebar-w) minmax(0, 1fr);
   min-height: 0;
   flex: 1;
+  overflow: auto;
 }
 
-.sidebar {
-  border-right: 1px solid var(--border);
-  background: var(--panel);
+.workspace.view-charts {
+  overflow: hidden;
   display: flex;
   flex-direction: column;
+}
+
+.workspace.view-charts .page-crawler {
+  flex: 1;
   min-height: 0;
 }
 
-.sidebar-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0.75rem 0.85rem;
-  border-bottom: 1px solid var(--border);
-  flex-shrink: 0;
-}
+.page[hidden] { display: none !important; }
 
-.sidebar-header h2 { font-size: 0.95rem; }
-
-.sidebar-header button {
-  width: 2rem;
-  height: 2rem;
-  padding: 0;
-  font-size: 1.2rem;
-  line-height: 1;
-}
-
-.crawler-list {
-  overflow: auto;
-  flex: 1;
-  padding: 0.4rem;
-}
-
-.crawler-row {
+.page-landing,
+.page-config,
+.page-create {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 1.25rem 1.5rem 2.5rem;
   width: 100%;
+}
+
+.page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.page-header h2 { font-size: 1.35rem; }
+.page-header p { margin: 0.35rem 0 0; max-width: 40rem; }
+
+.project-list {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel);
+}
+
+.project-list .empty-detail {
+  margin: 0;
+  padding: 2rem 1rem;
+}
+
+button.project-row {
+  width: 100%;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 0.9rem;
+  align-items: center;
+  padding: 0.95rem 1rem;
   text-align: left;
   background: transparent;
   color: var(--text);
-  border: 1px solid transparent;
-  border-radius: 8px;
-  padding: 0.7rem 0.75rem;
-  margin-bottom: 0.3rem;
+  border: none;
+  border-bottom: 1px solid var(--border);
+  border-radius: 0;
   font-weight: 400;
-  display: grid;
-  gap: 0.35rem;
   cursor: pointer;
 }
 
-.crawler-row:hover {
-  background: var(--panel-2);
+button.project-row:last-child { border-bottom: none; }
+
+button.project-row:hover {
+  background: #1e2833;
   border-color: var(--border);
 }
 
-.crawler-row.selected {
-  background: var(--panel-2);
-  border-color: var(--accent);
-  box-shadow: 0 0 0 1px rgba(91, 159, 212, 0.25);
+.project-avatar {
+  width: 40px;
+  height: 40px;
+  border-radius: 8px;
+  background: #243044;
+  color: var(--accent);
+  display: grid;
+  place-items: center;
+  font-weight: 700;
+  letter-spacing: 0.02em;
 }
 
-.crawler-row-top {
+.project-name {
+  color: var(--accent);
+  font-weight: 600;
+  font-size: 1rem;
+}
+
+.project-path,
+.project-desc {
+  color: var(--muted);
+  font-size: 0.84rem;
+  margin-top: 0.15rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.project-desc { color: var(--text); }
+
+.project-side {
   display: flex;
-  justify-content: space-between;
-  gap: 0.5rem;
-  align-items: start;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.4rem;
+  min-width: 9rem;
 }
 
-.crawler-row h3 {
-  font-size: 0.92rem;
+.project-stats {
+  display: flex;
+  gap: 0.85rem;
+  color: var(--muted);
+  font-size: 0.8rem;
+  white-space: nowrap;
+}
+
+.project-stats strong {
+  color: var(--text);
   font-weight: 600;
 }
 
-.crawler-row .site-id {
-  color: var(--muted);
-  font-size: 0.75rem;
+.crumb {
+  background: transparent;
+  color: var(--accent);
+  border: none;
+  padding: 0;
+  font-weight: 600;
+  font-size: 0.85rem;
+  margin-bottom: 0.35rem;
 }
 
-.crawler-flags {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.25rem;
-}
+.crumb:hover { border-color: transparent; text-decoration: underline; }
 
 .pill {
   padding: 0.15rem 0.5rem;
@@ -282,9 +331,10 @@ button:disabled { cursor: not-allowed; opacity: 0.6; }
 .badge.accent { border-color: rgba(91, 159, 212, 0.35); color: var(--accent); }
 .badge.off { color: var(--muted); }
 
-.detail {
+.page-crawler {
   min-width: 0;
   min-height: 0;
+  height: 100%;
   display: flex;
   flex-direction: column;
   background: var(--bg);
@@ -303,12 +353,9 @@ button:disabled { cursor: not-allowed; opacity: 0.6; }
   margin-bottom: 0.5rem;
 }
 
-.detail-content,
-.create-panel {
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-  flex: 1;
+.page-config .config-scroll,
+.page-create .config-form {
+  padding: 1rem 0 0;
 }
 
 .detail-header {
@@ -371,8 +418,23 @@ button:disabled { cursor: not-allowed; opacity: 0.6; }
 .tab-panels {
   flex: 1;
   min-height: 0;
-  overflow: auto;
+  display: flex;
+  flex-direction: column;
   padding: 1rem;
+}
+
+#panel-live {
+  flex: 1;
+  overflow: auto;
+  min-height: 0;
+}
+
+#panel-charts {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 }
 
 .tab-panel[hidden] { display: none !important; }
@@ -501,8 +563,12 @@ button:disabled { cursor: not-allowed; opacity: 0.6; }
   border: 1px solid var(--border);
   border-radius: 10px;
   padding: 1rem;
-  height: min(420px, calc(100vh - 220px));
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  position: relative;
 }
+
 
 .config-form { display: grid; gap: 0.75rem; }
 
@@ -558,24 +624,15 @@ textarea {
   padding-top: 0.5rem;
 }
 
-.create-panel {
-  padding: 0;
-}
-
-.create-panel .config-form {
-  padding: 1rem;
-  overflow: auto;
-}
-
 @media (max-width: 960px) {
-  .workspace {
-    grid-template-columns: 1fr;
-    grid-template-rows: minmax(180px, 32vh) minmax(0, 1fr);
+  button.project-row {
+    grid-template-columns: auto minmax(0, 1fr);
   }
 
-  .sidebar {
-    border-right: none;
-    border-bottom: 1px solid var(--border);
+  .project-side {
+    grid-column: 2;
+    align-items: flex-start;
+    min-width: 0;
   }
 
   .live-grid { grid-template-columns: 1fr; }
