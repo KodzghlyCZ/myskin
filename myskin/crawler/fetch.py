@@ -82,16 +82,39 @@ class RobotsCache:
         base = f"{parsed.scheme}://{parsed.netloc}"
         parser = self._parsers.get(base)
         if parser is None:
-            parser = RobotFileParser()
-            robots_url = f"{base}/robots.txt"
-            try:
-                parser.set_url(robots_url)
-                parser.read()
-            except Exception as exc:
-                logger.warning("Could not read robots.txt for %s: %s", base, exc)
+            parser = self._load_parser(f"{base}/robots.txt")
             self._parsers[base] = parser
 
         try:
             return parser.can_fetch(self.user_agent, url)
         except Exception:
             return True
+
+    def _load_parser(self, robots_url: str) -> RobotFileParser:
+        """Read robots.txt as the crawler, not as urllib's default agent.
+
+        A missing file (404) allows the host. urllib's own agent is rejected
+        with 403 by some of these sites, and RobotFileParser treats that 403
+        as a ban on every URL.
+        """
+        parser = RobotFileParser()
+        try:
+            response = httpx.get(
+                robots_url,
+                headers={"User-Agent": self.user_agent},
+                timeout=20.0,
+                follow_redirects=True,
+            )
+        except Exception as exc:
+            logger.warning("Could not read robots.txt for %s: %s", robots_url, exc)
+            parser.allow_all = True
+            return parser
+
+        if response.status_code in (401, 403):
+            parser.disallow_all = True
+            return parser
+        if response.status_code >= 400:
+            parser.allow_all = True
+            return parser
+        parser.parse(response.text.splitlines())
+        return parser
