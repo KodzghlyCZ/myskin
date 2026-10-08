@@ -39,7 +39,7 @@ let selectedDetail = null;
 let sitesCache = [];
 let oidcEnabled = false;
 let lastLiveData = null;
-let chartBfsMode = false;
+let chartRaw = [];
 let activeTab = "live";
 let currentView = "landing";
 
@@ -527,9 +527,12 @@ function renderCompactBar(data) {
     const processed = (stats.pages_fetched || 0) + (stats.pdfs_fetched || 0);
     const pct = live.max_pages ? Math.min(100, Math.round((processed / live.max_pages) * 100)) : 0;
 
+    const failed = (stats.pages_failed || 0) + (stats.pdfs_failed || 0);
     sections.push(section("This run", [
       metric("processed", `${processed} / ${live.max_pages} (${pct}%)`, "accent"),
-      metric("queue", live.queue_pending, live.queue_pending ? "warn" : ""),
+      metric("in queue", live.queue_pending, live.queue_pending ? "warn" : ""),
+      metric("discarded", stats.discarded || 0),
+      metric("failed", failed, failed ? "bad" : ""),
     ].join(sep())));
 
     if (bfsMode) {
@@ -578,7 +581,7 @@ function renderLive(data) {
   const live = data.live || {};
   const stats = live.stats || {};
   const bfsMode = isBfsMode(selectedDetail, stats);
-  syncChart(live, bfsMode);
+  syncChart(live);
 
   const events = live.events || [];
   eventsEl.innerHTML = events.length
@@ -596,39 +599,61 @@ function renderLive(data) {
     : '<div class="event" style="color:#8b9cb3">Queue empty or waiting for crawl…</div>';
 }
 
-function buildChartDatasets(bfsMode) {
-  const datasets = [
+function stackParts(sample) {
+  const failed = Number(sample.failed || 0);
+  const processed = Math.max(0, Number(sample.processed || 0) - failed);
+  const queue = Number(sample.queue || 0);
+  const discarded = Number(sample.discarded || 0);
+  const parts = {
+    Processed: processed,
+    "In queue": queue,
+    Discarded: discarded,
+    Failed: failed,
+  };
+  const total = processed + queue + discarded + failed;
+  const share = {};
+  for (const [name, value] of Object.entries(parts)) {
+    share[name] = total ? (value / total) * 100 : 0;
+  }
+  return {
+    parts,
+    share,
+    discovered: Number(sample.discovered || 0),
+  };
+}
+
+function buildChartDatasets() {
+  const area = (label, color, fill) => ({
+    type: "line",
+    label,
+    yAxisID: "y",
+    stack: "mix",
+    data: [],
+    borderColor: color,
+    backgroundColor: fill,
+    borderWidth: 1,
+    pointRadius: 0,
+    tension: 0.15,
+    fill: true,
+  });
+  return [
+    area("Processed", "#5b9fd4", "rgba(91,159,212,0.55)"),
+    area("In queue", "#e8b84a", "rgba(232,184,74,0.45)"),
+    area("Discarded", "#9aa8b8", "rgba(154,168,184,0.4)"),
+    area("Failed", "#e86a6a", "rgba(232,106,106,0.55)"),
     {
-      label: "Queue",
-      data: [],
-      borderColor: "#e8b84a",
-      backgroundColor: "rgba(232,184,74,0.12)",
-      tension: 0.1,
-      fill: true,
-      pointRadius: 0,
-    },
-  ];
-  if (bfsMode) {
-    datasets.push({
+      type: "line",
       label: "Discovered",
+      yAxisID: "y1",
       data: [],
       borderColor: "#6bcf7f",
-      backgroundColor: "rgba(107,207,127,0.08)",
-      tension: 0.1,
-      fill: false,
+      backgroundColor: "transparent",
+      borderWidth: 2,
       pointRadius: 0,
-    });
-  }
-  datasets.push({
-    label: "Processed",
-    data: [],
-    borderColor: "#5b9fd4",
-    backgroundColor: "rgba(91,159,212,0.08)",
-    tension: 0.1,
-    fill: false,
-    pointRadius: 0,
-  });
-  return datasets;
+      tension: 0.15,
+      fill: false,
+    },
+  ];
 }
 
 const chartCtx = document.getElementById("chart");
@@ -636,7 +661,7 @@ const chart = new Chart(chartCtx, {
   type: "line",
   data: {
     labels: [],
-    datasets: buildChartDatasets(false),
+    datasets: buildChartDatasets(),
   },
   options: {
     responsive: true,
@@ -654,14 +679,40 @@ const chart = new Chart(chartCtx, {
         grid: { color: "#223044" },
       },
       y: {
-        beginAtZero: true,
-        grace: "5%",
-        ticks: { color: "#8b9cb3" },
+        stacked: true,
+        min: 0,
+        max: 100,
+        title: { display: true, text: "Share", color: "#8b9cb3" },
+        ticks: {
+          color: "#8b9cb3",
+          callback: (value) => `${value}%`,
+        },
         grid: { color: "#223044" },
+      },
+      y1: {
+        position: "right",
+        beginAtZero: true,
+        title: { display: true, text: "Discovered", color: "#6bcf7f" },
+        ticks: { color: "#8b9cb3" },
+        grid: { drawOnChartArea: false },
       },
     },
     plugins: {
       legend: { labels: { color: "#e8eef7" } },
+      tooltip: {
+        callbacks: {
+          label(context) {
+            const raw = chartRaw[context.dataIndex];
+            if (!raw) return context.dataset.label;
+            if (context.dataset.label === "Discovered") {
+              return `Discovered: ${raw.discovered}`;
+            }
+            const count = raw.parts[context.dataset.label] ?? 0;
+            const share = raw.share[context.dataset.label] ?? 0;
+            return `${context.dataset.label}: ${count} (${share.toFixed(1)}%)`;
+          },
+        },
+      },
     },
   },
 });
@@ -669,29 +720,14 @@ const chart = new Chart(chartCtx, {
 let chartRunId = null;
 let chartSampleLen = 0;
 
-function chartQueueIndex() {
-  return 0;
-}
-
-function chartDiscoveredIndex() {
-  return chartBfsMode ? 1 : -1;
-}
-
-function chartProcessedIndex() {
-  return chartBfsMode ? 2 : 1;
-}
-
-function configureChartMode(bfsMode) {
-  if (bfsMode === chartBfsMode) return;
-  chartBfsMode = bfsMode;
-  chart.data.datasets = buildChartDatasets(bfsMode);
-  chartRunId = null;
-  chartSampleLen = 0;
+function datasetByLabel(label) {
+  return chart.data.datasets.find((dataset) => dataset.label === label);
 }
 
 function resetChart() {
   chart.data.labels = [];
-  chart.data.datasets.forEach((ds) => { ds.data = []; });
+  chart.data.datasets.forEach((dataset) => { dataset.data = []; });
+  chartRaw = [];
   chartSampleLen = 0;
 }
 
@@ -700,29 +736,30 @@ function sampleLabel(sample) {
 }
 
 function pushSample(sample) {
+  const point = stackParts(sample);
   chart.data.labels.push(sampleLabel(sample));
-  chart.data.datasets[chartQueueIndex()].data.push(sample.queue);
-  if (chartBfsMode) {
-    chart.data.datasets[chartDiscoveredIndex()].data.push(sample.discovered);
+  chartRaw.push(point);
+  for (const [name, share] of Object.entries(point.share)) {
+    datasetByLabel(name).data.push(share);
   }
-  chart.data.datasets[chartProcessedIndex()].data.push(sample.processed);
+  datasetByLabel("Discovered").data.push(point.discovered);
   chart.update("none");
 }
 
 function loadSamples(samples) {
+  resetChart();
   chart.data.labels = samples.map(sampleLabel);
-  chart.data.datasets[chartQueueIndex()].data = samples.map((s) => s.queue);
-  if (chartBfsMode) {
-    chart.data.datasets[chartDiscoveredIndex()].data = samples.map((s) => s.discovered);
+  chartRaw = samples.map(stackParts);
+  for (const name of ["Processed", "In queue", "Discarded", "Failed"]) {
+    datasetByLabel(name).data = chartRaw.map((point) => point.share[name]);
   }
-  chart.data.datasets[chartProcessedIndex()].data = samples.map((s) => s.processed);
+  datasetByLabel("Discovered").data = chartRaw.map((point) => point.discovered);
   chartSampleLen = samples.length;
   chart.update("none");
 }
 
-function syncChart(live, bfsMode) {
+function syncChart(live) {
   const samples = live.samples || [];
-  configureChartMode(bfsMode);
 
   if (!live.run_id) {
     if (chartSampleLen > 0) {
@@ -735,8 +772,8 @@ function syncChart(live, bfsMode) {
 
   if (live.run_id !== chartRunId || samples.length < chartSampleLen) {
     chartRunId = live.run_id;
-    resetChart();
     if (samples.length) loadSamples(samples);
+    else resetChart();
     return;
   }
 

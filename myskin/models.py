@@ -59,6 +59,7 @@ class CrawlStatsModel(BaseModel):
     sitemap_urls: int = 0
     sitemap_queued: int = 0
     sitemap_skipped: int = 0
+    discarded: int = 0
 
 
 class CrawlStatusResponse(BaseModel):
@@ -86,6 +87,8 @@ class CrawlLiveSampleModel(BaseModel):
     queue: int
     discovered: int
     processed: int
+    discarded: int = 0
+    failed: int = 0
 
 
 class CrawlLiveEventModel(BaseModel):

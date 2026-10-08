@@ -9,7 +9,7 @@ from pathlib import Path
 from re import Pattern
 
 from myskin.crawler.fetch import Fetcher
-from myskin.crawler.urls import ParsedUrl, is_in_scope, normalize_url, same_host
+from myskin.crawler.urls import ParsedUrl, is_in_scope, normalize_url, rejected_by_url_pattern, same_host
 
 logger = logging.getLogger(__name__)
 
@@ -99,9 +99,10 @@ def load_sitemap_entries(
     *,
     max_depth: int = 3,
     url_pattern: Pattern[str] | None = None,
-) -> list[SitemapEntry]:
+) -> tuple[list[SitemapEntry], set[str]]:
     urls = (sitemap_urls,) if isinstance(sitemap_urls, str) else tuple(sitemap_urls)
     merged: dict[str, datetime | None] = {}
+    discarded: set[str] = set()
     for sitemap_url in urls:
         _collect_sitemap(
             fetcher,
@@ -111,8 +112,10 @@ def load_sitemap_entries(
             depth=0,
             max_depth=max_depth,
             url_pattern=url_pattern,
+            discarded=discarded,
         )
-    return [SitemapEntry(url=url, lastmod=lastmod) for url, lastmod in sorted(merged.items())]
+    entries = [SitemapEntry(url=url, lastmod=lastmod) for url, lastmod in sorted(merged.items())]
+    return entries, discarded
 
 
 def _collect_sitemap(
@@ -124,6 +127,7 @@ def _collect_sitemap(
     depth: int,
     max_depth: int,
     url_pattern: Pattern[str] | None = None,
+    discarded: set[str] | None = None,
 ) -> None:
     if depth > max_depth:
         logger.warning("Sitemap recursion limit reached at %s", sitemap_url)
@@ -151,6 +155,10 @@ def _collect_sitemap(
 
     for entry in entries:
         page = normalize_url(entry.url)
+        if page is not None and rejected_by_url_pattern(page, seed, url_pattern):
+            if discarded is not None:
+                discarded.add(page.normalized)
+            continue
         if not page or not is_in_scope(page, seed, url_pattern=url_pattern):
             continue
         url = page.normalized
@@ -167,6 +175,7 @@ def _collect_sitemap(
             depth=depth + 1,
             max_depth=max_depth,
             url_pattern=url_pattern,
+            discarded=discarded,
         )
 
 

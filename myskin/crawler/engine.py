@@ -22,6 +22,7 @@ from myskin.crawler.urls import (
     is_css_url,
     is_pdf_url,
     normalize_url,
+    rejected_by_url_pattern,
     url_to_relative_path,
 )
 from myskin.crawler.progress import CrawlProgressDisplay
@@ -90,6 +91,7 @@ class CrawlEngine:
         self.data_dir.mkdir(parents=True, exist_ok=True)
         self.progress = progress
         self._run_stats: CrawlStats | None = None
+        self._discarded_urls: set[str] = set()
 
     def run(self, *, trigger: str = "manual") -> CrawlResult:
         seed = normalize_url(self.settings.seed_url)
@@ -98,6 +100,7 @@ class CrawlEngine:
 
         stats = CrawlStats()
         self._run_stats = stats
+        self._discarded_urls = set()
         run_id = self.state.start_run(seed.normalized)
 
         try:
@@ -130,6 +133,8 @@ class CrawlEngine:
 
                     parsed = normalize_url(item.url)
                     if not parsed or not self.settings.allows_url(parsed, seed):
+                        if parsed is not None:
+                            self._note_pattern_discard(parsed, seed, stats)
                         continue
 
                     if robots and not robots.allowed(parsed.normalized):
@@ -167,6 +172,28 @@ class CrawlEngine:
         finally:
             self._run_stats = None
 
+    def _remember_discards(self, urls: set[str]) -> None:
+        self._discarded_urls.update(urls)
+        self._sync_discarded_count()
+
+    def _note_pattern_discard(
+        self,
+        parsed: ParsedUrl,
+        seed: ParsedUrl,
+        stats: CrawlStats | None = None,
+    ) -> None:
+        if not rejected_by_url_pattern(parsed, seed, self.settings.url_pattern):
+            return
+        self._discarded_urls.add(parsed.normalized)
+        self._sync_discarded_count(stats)
+
+    def _sync_discarded_count(self, stats: CrawlStats | None = None) -> None:
+        count = len(self._discarded_urls)
+        if self._run_stats is not None:
+            self._run_stats.discarded = count
+        if stats is not None and stats is not self._run_stats:
+            stats.discarded = count
+
     def _build_queue(
         self, seed: ParsedUrl, fetcher: Fetcher
     ) -> tuple[deque[QueuedUrl], _CrawlFrontier, SitemapQueueInfo | None]:
@@ -197,12 +224,13 @@ class CrawlEngine:
             return frontier.queue, frontier, info
 
         if self.settings.sitemap_urls:
-            entries = load_sitemap_entries(
+            entries, discarded_urls = load_sitemap_entries(
                 fetcher,
                 self.settings.sitemap_urls,
                 seed,
                 url_pattern=self.settings.url_pattern,
             )
+            self._remember_discards(discarded_urls)
             queued, skipped = self._enqueue_sitemap_entries(frontier, seed, entries)
             info = SitemapQueueInfo(total=len(entries), queued=queued, skipped=skipped)
             sitemap_label = ", ".join(self.settings.sitemap_urls)
@@ -240,6 +268,8 @@ class CrawlEngine:
         for entry in entries:
             parsed = normalize_url(entry.url)
             if not parsed or not self.settings.allows_url(parsed, seed):
+                if parsed is not None:
+                    self._note_pattern_discard(parsed, seed)
                 continue
             if is_css_url(parsed.normalized):
                 continue
@@ -277,6 +307,8 @@ class CrawlEngine:
             for record in self.state.list_resources():
                 parsed = normalize_url(record.url)
                 if not parsed or not self.settings.allows_url(parsed, seed):
+                    if parsed is not None:
+                        self._note_pattern_discard(parsed, seed)
                     continue
                 if is_css_url(parsed.normalized):
                     continue
@@ -454,6 +486,8 @@ class CrawlEngine:
     ) -> int:
         link_parsed = normalize_url(link)
         if not link_parsed or not self.settings.allows_url(link_parsed, seed):
+            if link_parsed is not None:
+                self._note_pattern_discard(link_parsed, seed)
             return 0
         if is_css_url(link_parsed.normalized):
             return 0

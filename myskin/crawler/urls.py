@@ -139,6 +139,29 @@ def is_in_scope(
             return False
     if url_pattern is None:
         return True
+    return _pattern_matches(url, url_pattern)
+
+
+def rejected_by_url_pattern(
+    url: ParsedUrl,
+    seed: ParsedUrl,
+    url_pattern: re.Pattern[str] | None,
+) -> bool:
+    """True when a same-site URL is dropped only because `url_pattern` misses.
+
+    Off-host links and URLs outside the seed path are out of scope for other
+    reasons, so they are not counted as regex discards.
+    """
+    if url_pattern is None or not same_host(url, seed):
+        return False
+    if seed.path not in ("", "/"):
+        prefix = seed.path.rstrip("/") + "/"
+        if url.path != seed.path and not url.path.startswith(prefix):
+            return False
+    return not _pattern_matches(url, url_pattern)
+
+
+def _pattern_matches(url: ParsedUrl, url_pattern: re.Pattern[str]) -> bool:
     if url_pattern.search(url.normalized):
         return True
     return url_pattern.search(url.path) is not None

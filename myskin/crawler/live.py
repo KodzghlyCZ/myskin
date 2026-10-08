@@ -14,6 +14,8 @@ class LiveSample:
     queue: int
     discovered: int
     processed: int
+    discarded: int = 0
+    failed: int = 0
 
 
 @dataclass(frozen=True)
@@ -143,6 +145,9 @@ class CrawlLiveMonitor:
     def _processed_locked(self) -> int:
         return self.stats.pages_fetched + self.stats.pdfs_fetched
 
+    def _failed_locked(self) -> int:
+        return self.stats.pages_failed + self.stats.pdfs_failed
+
     def _append_sample_locked(self) -> None:
         self.samples.append(
             LiveSample(
@@ -150,6 +155,8 @@ class CrawlLiveMonitor:
                 queue=self.queue_pending,
                 discovered=self.stats.discovered,
                 processed=self._processed_locked(),
+                discarded=self.stats.discarded,
+                failed=self._failed_locked(),
             )
         )
 

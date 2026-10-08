@@ -36,6 +36,7 @@ class CrawlStats:
     sitemap_urls: int = 0
     sitemap_queued: int = 0
     sitemap_skipped: int = 0
+    discarded: int = 0
 
 
 class CrawlState:

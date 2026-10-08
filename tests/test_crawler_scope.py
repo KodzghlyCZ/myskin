@@ -7,7 +7,14 @@ from pathlib import Path
 
 from myskin.crawler.config import CrawlSettings
 from myskin.crawler.sitemap import SitemapEntry, load_sitemap_entries, parse_sitemap_xml
-from myskin.crawler.urls import is_in_scope, normalize_url, same_host, slugify_segment, url_to_relative_path
+from myskin.crawler.urls import (
+    is_in_scope,
+    normalize_url,
+    rejected_by_url_pattern,
+    same_host,
+    slugify_segment,
+    url_to_relative_path,
+)
 
 
 def _url(value: str):
@@ -42,6 +49,17 @@ class UrlScopeTests(unittest.TestCase):
         pattern = re.compile(r"/dokumenty/")
         self.assertTrue(is_in_scope(_url("https://edu.gov.cz/cs/dokumenty/a"), seed, url_pattern=pattern))
         self.assertFalse(is_in_scope(_url("https://edu.gov.cz/cs/novinky/a"), seed, url_pattern=pattern))
+
+    def test_regex_reject_ignores_other_hosts_and_seed_prefix(self) -> None:
+        seed = _url("https://edu.gov.cz/")
+        pattern = re.compile(r"^(?!.*\/(?:job|kariera)(?:\/|$))")
+        self.assertTrue(rejected_by_url_pattern(_url("https://edu.gov.cz/job/teacher"), seed, pattern))
+        self.assertFalse(rejected_by_url_pattern(_url("https://edu.gov.cz/metodika"), seed, pattern))
+        self.assertFalse(rejected_by_url_pattern(_url("https://other.example/job/teacher"), seed, pattern))
+        prefixed = _url("https://edu.gov.cz/cs/")
+        self.assertFalse(
+            rejected_by_url_pattern(_url("https://edu.gov.cz/en/job/teacher"), prefixed, pattern)
+        )
 
     def test_same_host_ignores_path(self) -> None:
         seed = _url("https://edu.gov.cz/cs/")
@@ -185,7 +203,7 @@ class SitemapLoadTests(unittest.TestCase):
             }
         )
         seed = _url("https://edu.gov.cz/")
-        entries = load_sitemap_entries(
+        entries, discarded = load_sitemap_entries(
             fetcher,
             ("https://edu.gov.cz/a.xml", "https://edu.gov.cz/b.xml"),
             seed,
@@ -195,6 +213,7 @@ class SitemapLoadTests(unittest.TestCase):
             [entry.url for entry in entries],
             ["https://edu.gov.cz/cs/one", "https://edu.gov.cz/cs/two"],
         )
+        self.assertEqual(discarded, {"https://edu.gov.cz/en/skip"})
 
     def test_fetches_sitemap_outside_page_prefix(self) -> None:
         fetcher = _FakeFetcher(
@@ -208,9 +227,10 @@ class SitemapLoadTests(unittest.TestCase):
             }
         )
         seed = _url("https://edu.gov.cz/cs/")
-        entries = load_sitemap_entries(fetcher, "https://edu.gov.cz/sitemap.xml", seed)
+        entries, discarded = load_sitemap_entries(fetcher, "https://edu.gov.cz/sitemap.xml", seed)
         self.assertEqual([entry.url for entry in entries], ["https://edu.gov.cz/cs/keep"])
         self.assertIsInstance(entries[0], SitemapEntry)
+        self.assertEqual(discarded, set())
 
 
 if __name__ == "__main__":
