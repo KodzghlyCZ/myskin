@@ -7,7 +7,7 @@ from pathlib import Path
 
 from myskin.crawler.config import CrawlSettings
 from myskin.crawler.sitemap import SitemapEntry, load_sitemap_entries, parse_sitemap_xml
-from myskin.crawler.urls import is_in_scope, normalize_url, same_host
+from myskin.crawler.urls import is_in_scope, normalize_url, same_host, slugify_segment, url_to_relative_path
 
 
 def _url(value: str):
@@ -47,6 +47,21 @@ class UrlScopeTests(unittest.TestCase):
         seed = _url("https://edu.gov.cz/cs/")
         self.assertTrue(same_host(_url("https://edu.gov.cz/sitemap.xml"), seed))
         self.assertFalse(same_host(_url("https://other.example/sitemap.xml"), seed))
+
+
+class SlugifySegmentTests(unittest.TestCase):
+    def test_short_segment_unchanged(self) -> None:
+        self.assertEqual(slugify_segment("Metodika-2024"), "metodika-2024")
+
+    def test_long_percent_encoded_name_fits_with_sidecar(self) -> None:
+        segment = "d0-9b-" * 40 + "dokument_fin.pdf"
+        slug = slugify_segment(segment)
+        self.assertLessEqual(len(slug), 80)
+        self.assertNotEqual(slug, slugify_segment(segment + "-b"))
+        parsed = _url(f"https://edu.gov.cz/wp-content/uploads/2022/04/{segment}")
+        rel = url_to_relative_path(parsed, resource_type="file", extension=".pdf")
+        filename = rel.rsplit("/", 1)[-1]
+        self.assertLessEqual(len(filename + ".meta.yaml"), 255)
 
 
 class CrawlSettingsSitemapTests(unittest.TestCase):

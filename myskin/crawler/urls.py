@@ -145,9 +145,13 @@ def is_in_scope(
 
 
 def slugify_segment(segment: str) -> str:
-    segment = segment.strip().lower()
-    segment = _UNSAFE_PATH.sub("-", segment)
-    return segment.strip("-") or "index"
+    raw = segment.strip().lower()
+    segment = _UNSAFE_PATH.sub("-", raw).strip("-") or "index"
+    # A percent-encoded title can exceed NAME_MAX once ".md.meta.yaml" is added.
+    if len(segment) <= 80:
+        return segment
+    digest = hashlib.sha256(raw.encode()).hexdigest()[:8]
+    return f"{segment[:71].rstrip('-')}-{digest}"
 
 
 def content_hash(data: bytes) -> str:
