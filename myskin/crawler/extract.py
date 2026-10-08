@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import html as html_lib
 import io
+import json
 import logging
+import re
 from dataclasses import dataclass
 from urllib.parse import urlparse
 
@@ -17,6 +20,8 @@ logger = logging.getLogger(__name__)
 
 _SKIP_TAGS = {"script", "style", "noscript", "svg", "iframe"}
 _LINK_ATTRS = ("href", "src")
+_DATA_VALUE_JSON = re.compile(r"data-value=(['\"])(\{.*?\})\1", re.DOTALL)
+_URL_KEYS = {"url", "href", "link", "file", "src", "download"}
 
 
 @dataclass
@@ -25,6 +30,34 @@ class PageExtract:
     markdown: str
     page_links: list[str]
     file_links: list[str]
+
+
+def _walk_json_urls(obj: object) -> list[str]:
+    found: list[str] = []
+    if isinstance(obj, dict):
+        for key, value in obj.items():
+            if str(key).lower() in _URL_KEYS and isinstance(value, str) and value.strip():
+                found.append(value.strip())
+            found.extend(_walk_json_urls(value))
+    elif isinstance(obj, list):
+        for item in obj:
+            found.extend(_walk_json_urls(item))
+    elif isinstance(obj, str) and obj.startswith(("http://", "https://", "/")):
+        if any(obj.lower().endswith(ext) for ext in (".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx")):
+            found.append(obj)
+    return found
+
+
+def _embedded_json_urls(raw_html: str) -> list[str]:
+    urls: list[str] = []
+    for match in _DATA_VALUE_JSON.finditer(raw_html):
+        blob = html_lib.unescape(match.group(2))
+        try:
+            obj = json.loads(blob)
+        except json.JSONDecodeError:
+            continue
+        urls.extend(_walk_json_urls(obj))
+    return urls
 
 
 def html_to_markdown(html: str) -> str:
@@ -114,6 +147,16 @@ def extract_page(
                 file_links.append(parsed.normalized)
             else:
                 page_links.append(parsed.normalized)
+
+    for href in _embedded_json_urls(html.decode("utf-8", errors="replace")):
+        parsed = normalize_url(href, page_url)
+        if not parsed or parsed.normalized in seen:
+            continue
+        seen.add(parsed.normalized)
+        if is_passthrough_url(parsed.normalized, passthrough_extensions):
+            file_links.append(parsed.normalized)
+        else:
+            page_links.append(parsed.normalized)
 
     return PageExtract(
         title=title or page_url,
